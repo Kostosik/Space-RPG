@@ -27,6 +27,7 @@ internal sealed class GameMain : EngineGame
     new("Definitions/Ships/starter_scout.json");
 
     private ShipDefinition? _starterShipDefinition;
+    private ShipStats? _starterShipStats;
     private string _galaxyMapMessage =
         "SELECT A STAR SYSTEM";
     private bool _isLanded;
@@ -93,15 +94,19 @@ internal sealed class GameMain : EngineGame
             Runtime.Services.Content.Load<ShipDefinition>(
                 StarterShipAssetPath);
 
-        var baseStats = _starterShipDefinition.BaseStats;
+        var shipDefinition = _starterShipDefinition
+            ?? throw new InvalidOperationException(
+                "Starter ship definition was not loaded.");
 
-        if (baseStats is null ||
-            !float.IsFinite(baseStats.MaxSpeed) ||
-            baseStats.MaxSpeed <= 0.0f ||
-            baseStats.FuelCapacity <= 0)
+        _starterShipStats = new ShipStatsCalculator()
+            .Calculate(shipDefinition);
+
+        if (!float.IsFinite(_starterShipStats.MaxSpeed) ||
+            _starterShipStats.MaxSpeed <= 0.0f ||
+            _starterShipStats.FuelCapacity <= 0)
         {
             throw new InvalidDataException(
-                "Starter ship contains invalid base statistics.");
+                "Starter ship contains invalid statistics.");
         }
 
         // Создаём игровой корабль в ECS-мире.
@@ -115,7 +120,7 @@ internal sealed class GameMain : EngineGame
             {
                 Position = new Vector2(-100.0f, 0.0f),
                 Rotation = 0.0f,
-                MaxSpeed = baseStats.MaxSpeed
+                MaxSpeed = _starterShipStats.MaxSpeed
             });
 
         _shipMovementSystem = new PlayerShipMovementSystem(
@@ -135,7 +140,9 @@ internal sealed class GameMain : EngineGame
         _session = GameSession.CreateNew();
 
         _session.Player.GalaxyNavigation.SetFuelCapacity(
-            _starterShipDefinition!.BaseStats.FuelCapacity);
+            _starterShipStats?.FuelCapacity
+                ?? throw new InvalidOperationException(
+                    "Starter ship statistics were not initialized."));
 
         if (_starterShipDefinition is null ||
     !string.Equals(
@@ -164,7 +171,8 @@ internal sealed class GameMain : EngineGame
         // Один игровой день визуально проходит за 6 секунд.
         gameTime.SetDayDuration(
             TimeSpan.FromSeconds(6));
-
+        // Подключаем орбиты планет к игровому времени.
+        gameTime.Advanced += OnGameTimeAdvanced;
         // Подключаем движение корабля к игровому времени.
         _shipMovementSystem?.AttachGameTime(gameTime);
 
@@ -201,6 +209,18 @@ internal sealed class GameMain : EngineGame
 
         Console.WriteLine(
             $"Player ship created: {_shipEntity}");
+    }
+
+    private void OnGameTimeAdvanced(GameTimeAdvanced advanced)
+    {
+        if (_session is null)
+            return;
+
+        // Переводим интервал времени в игровые дни.
+        var elapsedGameDays = advanced.Delta.Value.TotalDays;
+
+        // Двигаем все планеты текущей звёздной системы.
+        _session.World.StarSystem.AdvanceOrbit(elapsedGameDays);
     }
 
     protected override void OnUpdate(TimeSnapshot time)
@@ -737,6 +757,16 @@ internal sealed class GameMain : EngineGame
 
         if (starSystem is not null)
         {
+            // Рисуем орбиты всех планет.
+            foreach (var planet in starSystem.Objects.OfType<PlanetObject>())
+            {
+                DrawWorldCircle(
+                    starSystem.Star.X,
+                    starSystem.Star.Y,
+                    planet.OrbitRadius,
+                    new DebugColor(45, 70, 105));
+            }
+
             // Центральная звезда.
             DrawWorldCircle(
                 starSystem.Star.X,
@@ -1139,7 +1169,7 @@ internal sealed class GameMain : EngineGame
         {
             Console.WriteLine(
                 $"Game session ended: {_session.SessionId}");
-
+            _session.Simulation.Time.Advanced -= OnGameTimeAdvanced;
             _session = null;
         }
 

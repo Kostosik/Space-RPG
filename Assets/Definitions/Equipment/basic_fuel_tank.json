@@ -1,0 +1,8 @@
+{
+  "id": "basic_fuel_tank",
+  "name": "Basic Fuel Tank",
+  "type": "fuel_tank",
+  "description": "An additional fuel tank.",
+  "maxSpeedBonus": 0.0,
+  "fuelCapacityBonus": 50
+}

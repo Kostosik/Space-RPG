@@ -15,8 +15,14 @@ public abstract class StarSystemObject
     }
 
     public string Name { get; }
-    public double X { get; }
-    public double Y { get; }
+    public double X { get; private set; }
+    public double Y { get; private set; }
+
+    protected void SetPosition(double x, double y)
+    {
+        X = x;
+        Y = y;
+    }
     public double VisualRadius { get; }
 }
 
@@ -44,12 +50,77 @@ public sealed class PlanetObject : StarSystemObject
         double y,
         double radius,
         string description)
-        : base(name, x, y, radius)
+        : this(
+            name,
+            Math.Sqrt(x * x + y * y),
+            90.0,
+            Math.Atan2(y, x),
+            radius,
+            description)
     {
+    }
+
+    public PlanetObject(
+        string name,
+        double orbitRadius,
+        double orbitalPeriodDays,
+        double initialAngleRadians,
+        double radius,
+        string description,
+        double centerX = 0.0,
+        double centerY = 0.0)
+        : base(
+            name,
+            centerX + Math.Cos(initialAngleRadians) * orbitRadius,
+            centerY + Math.Sin(initialAngleRadians) * orbitRadius,
+            radius)
+    {
+        if (!double.IsFinite(orbitRadius) || orbitRadius <= 0)
+            throw new ArgumentOutOfRangeException(nameof(orbitRadius));
+
+        if (!double.IsFinite(orbitalPeriodDays) || orbitalPeriodDays <= 0)
+            throw new ArgumentOutOfRangeException(nameof(orbitalPeriodDays));
+
+        OrbitRadius = orbitRadius;
+        OrbitalPeriodDays = orbitalPeriodDays;
+        OrbitAngleRadians = initialAngleRadians;
         Description = description;
     }
 
     public string Description { get; }
+
+    // Расстояние до звезды.
+    public double OrbitRadius { get; }
+
+    // Сколько игровых дней занимает полный оборот.
+    public double OrbitalPeriodDays { get; }
+
+    // Текущий угол планеты.
+    public double OrbitAngleRadians { get; private set; }
+
+    public void AdvanceOrbit(
+        double elapsedGameDays,
+        double centerX,
+        double centerY)
+    {
+        if (!double.IsFinite(elapsedGameDays) || elapsedGameDays <= 0)
+            return;
+
+        // Увеличиваем угол движения.
+        OrbitAngleRadians =
+            (OrbitAngleRadians +
+             Math.Tau * elapsedGameDays / OrbitalPeriodDays)
+            % Math.Tau;
+
+        // Вычисляем новые координаты.
+        var x = centerX +
+                Math.Cos(OrbitAngleRadians) * OrbitRadius;
+
+        var y = centerY +
+                Math.Sin(OrbitAngleRadians) * OrbitRadius;
+
+        SetPosition(x, y);
+    }
 }
 
 public sealed class AsteroidObject : StarSystemObject

@@ -1,0 +1,8 @@
+{
+  "id": "basic_engine",
+  "name": "Basic Engine",
+  "type": "engine",
+  "description": "A standard spacecraft engine.",
+  "maxSpeedBonus": 50.0,
+  "fuelCapacityBonus": 0
+}

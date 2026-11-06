@@ -96,6 +96,11 @@ internal static class Program
                                     new DefinitionAssetFilter(
                                         "Definitions/Ships",
                                         ".json")));
+                            loaders.Register(
+                                new JsonGameDefinitionContentLoader<EquipmentDefinition>(
+                                    new DefinitionAssetFilter(
+                                        "Definitions/Equipment",
+                                        ".json")));
                         },
                         InputActions = inputActions,
                 });

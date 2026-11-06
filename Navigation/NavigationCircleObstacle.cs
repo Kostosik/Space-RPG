@@ -17,7 +17,7 @@ public sealed class NavigationCircleObstacle
         Radius = radius;
     }
 
-    public NavigationVector2 Center { get; }
+    public NavigationVector2 Center { get; internal set; }
 
     public double Radius { get; }
 }

@@ -31,8 +31,8 @@ public static class StarSystemGenerator
             "Звезда",
             0,
             0,
-            18,
-            45);
+            28,
+            60);
 
         var objects = new List<StarSystemObject>
         {
@@ -43,16 +43,19 @@ public static class StarSystemGenerator
 
         for (var i = 0; i < planetCount; i++)
         {
-            var distance = 100.0 + i * 75.0 +
-                           random.NextDouble() * 35.0;
+            // Радиус орбиты.
+            var distance =
+                115.0 + i * 80.0 + random.NextDouble() * 20.0;
 
-            var angle = random.NextDouble() *
-                        Math.PI * 2.0;
+            // Начальное положение.
+            var angle =
+                random.NextDouble() * Math.PI * 2.0;
 
-            var x = Math.Cos(angle) * distance;
-            var y = Math.Sin(angle) * distance;
+            // У каждой планеты своя скорость.
+            var orbitalPeriod = 12.0 + i * 9.0;
 
-            var radius = random.Next(6, 16);
+            // Увеличиваем размер планет.
+            var radius = random.Next(12, 24);
 
             var name = PlanetNames[
                 random.Next(PlanetNames.Length)];
@@ -60,11 +63,11 @@ public static class StarSystemGenerator
             objects.Add(
                 new PlanetObject(
                     name,
-                    x,
-                    y,
+                    distance,
+                    orbitalPeriod,
+                    angle,
                     radius,
                     "Неисследованная планета."));
-
         }
 
         // Астероидное поле.

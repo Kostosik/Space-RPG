@@ -5,11 +5,13 @@ namespace GameProject.World;
 public sealed class StarSystem
 {
     private const double NavigationClearance = 10.0;
-
+    private readonly Dictionary<PlanetObject, NavigationCircleObstacle>
+    _planetObstacles = new();
     public StarSystem(
         StarObject star,
         IReadOnlyList<StarSystemObject> objects)
     {
+
         ArgumentNullException.ThrowIfNull(star);
         ArgumentNullException.ThrowIfNull(objects);
 
@@ -37,14 +39,45 @@ public sealed class StarSystem
             if (obj is StarObject)
                 continue;
 
-            obstacles.Add(
-                new NavigationCircleObstacle(
-                    new NavigationVector2(obj.X, obj.Y),
-                    obj.VisualRadius + NavigationClearance));
+            var obstacle = new NavigationCircleObstacle(
+                new NavigationVector2(obj.X, obj.Y),
+                obj.VisualRadius + NavigationClearance);
+
+            obstacles.Add(obstacle);
+
+            if (obj is PlanetObject planet)
+            {
+                _planetObstacles.Add(planet, obstacle);
+            }
         }
 
         NavigationObstacles =
             Array.AsReadOnly(obstacles.ToArray());
+    }
+
+    public void AdvanceOrbit(double elapsedGameDays)
+    {
+        if (!double.IsFinite(elapsedGameDays) ||
+            elapsedGameDays <= 0)
+        {
+            return;
+        }
+
+        foreach (var entry in _planetObstacles)
+        {
+            var planet = entry.Key;
+
+            // Двигаем планету вокруг звезды.
+            planet.AdvanceOrbit(
+                elapsedGameDays,
+                Star.X,
+                Star.Y);
+
+            // Обновляем положение навигационного препятствия.
+            entry.Value.Center = new NavigationVector2(
+                planet.X,
+                planet.Y);
+        }
     }
 
     public StarObject Star { get; }
