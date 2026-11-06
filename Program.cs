@@ -4,7 +4,9 @@ using Engine.Runtime;
 using Engine.Serialization.Content;
 using Engine.Serialization.UI;
 using Engine.UI.Assets;
+using GameProject.Content;
 using GameProject.Player;
+using GameProject.Ships;
 using System.Text.Json;
 
 namespace GameProject;
@@ -80,16 +82,22 @@ internal static class Program
                 {
                     Title = "Space-RPG",
 
-                    ConfigureContentLoaders = loaders =>
-                    {
-                        loaders.Register(
-                            new BinaryContentLoader<UiAsset>(
-                                new UiAssetSerializer(),
-                                asset => asset.Extension.Equals(
-                                    ".ui",
-                                    StringComparison.OrdinalIgnoreCase)));
-                    },
-                    InputActions = inputActions,
+                        ConfigureContentLoaders = loaders =>
+                        {
+                            loaders.Register(
+                                new BinaryContentLoader<UiAsset>(
+                                    new UiAssetSerializer(),
+                                    asset => asset.Extension.Equals(
+                                        ".ui",
+                                        StringComparison.OrdinalIgnoreCase)));
+
+                            loaders.Register(
+                                new JsonGameDefinitionContentLoader<ShipDefinition>(
+                                    new DefinitionAssetFilter(
+                                        "Definitions/Ships",
+                                        ".json")));
+                        },
+                        InputActions = inputActions,
                 });
     }
 

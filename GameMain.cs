@@ -1,3 +1,4 @@
+using Engine.Core.Assets;
 using Engine.Core.Math;
 using Engine.Core.Systems;
 using Engine.Core.Time;
@@ -11,6 +12,7 @@ using Engine.Serialization.SaveLoad.Ecs;
 using Engine.Serialization.SaveLoad.Worlds;
 using GameProject.Game;
 using GameProject.Player;
+using GameProject.Ships;
 using GameProject.Simulation;
 using GameProject.World;
 
@@ -21,7 +23,10 @@ internal sealed class GameMain : EngineGame
     private bool _isGalaxyMapOpen;
 
     private string _selectedGalaxySystemId = "sol";
+    private static readonly AssetPath StarterShipAssetPath =
+    new("Definitions/Ships/starter_scout.json");
 
+    private ShipDefinition? _starterShipDefinition;
     private string _galaxyMapMessage =
         "SELECT A STAR SYSTEM";
     private bool _isLanded;
@@ -83,6 +88,22 @@ internal sealed class GameMain : EngineGame
             _startupScenePath,
             Runtime.World);
 
+        // Загружаем описание стартового корабля.
+        _starterShipDefinition =
+            Runtime.Services.Content.Load<ShipDefinition>(
+                StarterShipAssetPath);
+
+        var baseStats = _starterShipDefinition.BaseStats;
+
+        if (baseStats is null ||
+            !float.IsFinite(baseStats.MaxSpeed) ||
+            baseStats.MaxSpeed <= 0.0f ||
+            baseStats.FuelCapacity <= 0)
+        {
+            throw new InvalidDataException(
+                "Starter ship contains invalid base statistics.");
+        }
+
         // Создаём игровой корабль в ECS-мире.
         var ecs = Runtime.EcsWorld;
 
@@ -94,7 +115,7 @@ internal sealed class GameMain : EngineGame
             {
                 Position = new Vector2(-100.0f, 0.0f),
                 Rotation = 0.0f,
-                MaxSpeed = 300.0f
+                MaxSpeed = baseStats.MaxSpeed
             });
 
         _shipMovementSystem = new PlayerShipMovementSystem(
@@ -112,6 +133,20 @@ internal sealed class GameMain : EngineGame
     protected override void OnInitialize()
     {
         _session = GameSession.CreateNew();
+
+        _session.Player.GalaxyNavigation.SetFuelCapacity(
+            _starterShipDefinition!.BaseStats.FuelCapacity);
+
+        if (_starterShipDefinition is null ||
+    !string.Equals(
+        _session.Player.Ship.ShipDefinitionId,
+        _starterShipDefinition.Id,
+        StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Player ship state does not match the loaded ship definition.");
+        }
+
         _shipMovementSystem?.SetNavigationObstacles(
     _session.World.StarSystem.NavigationObstacles);
         var gameTime = _session.Simulation.Time;
@@ -1106,6 +1141,14 @@ internal sealed class GameMain : EngineGame
                 $"Game session ended: {_session.SessionId}");
 
             _session = null;
+        }
+
+        if (_starterShipDefinition is not null)
+        {
+            Runtime.Services.Content.Unload<ShipDefinition>(
+                StarterShipAssetPath);
+
+            _starterShipDefinition = null;
         }
     }
 

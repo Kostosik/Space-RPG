@@ -7,4 +7,6 @@
 public sealed class PlayerState
 {
     public GalaxyNavigationState GalaxyNavigation { get; } = new();
+
+    public PlayerShipState Ship { get; } = new("starter_scout");
 }
