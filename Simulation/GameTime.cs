@@ -93,6 +93,35 @@ public sealed class GameTime
                 interval));
     }
 
+
+    public void CompleteDay()
+    {
+        if (IsPaused)
+            return;
+
+        // Сначала останавливаем игровое время.
+        Pause();
+
+        // Определяем остаток времени до конца суток.
+        var elapsedTicks = _elapsed.Value.Ticks;
+
+        var ticksIntoDay =
+            elapsedTicks % TimeSpan.TicksPerDay;
+
+        var ticksToNextDay =
+            TimeSpan.TicksPerDay - ticksIntoDay;
+
+        // Убираем накопленную дробную часть.
+        _fractionalTicks = 0m;
+
+        // Доводим игровые часы до конца текущего дня.
+        // AdvanceBy также вызовет событие Advanced.
+        AdvanceBy(
+            new Duration(
+                TimeSpan.FromTicks(ticksToNextDay)));
+    }
+
+
     private void AdvanceFractional(decimal ticks)
     {
         _fractionalTicks += ticks;

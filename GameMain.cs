@@ -4,6 +4,7 @@ using Engine.Core.Time;
 using Engine.ECS.Entities;
 using Engine.Graphics.Commands;
 using Engine.Graphics.DebugGraphics;
+using Engine.Input;
 using Engine.Networking.Replication;
 using Engine.Runtime;
 using Engine.Serialization.SaveLoad.Ecs;
@@ -16,7 +17,9 @@ namespace GameProject;
 internal sealed class GameMain : EngineGame
 {
     private readonly string _startupScenePath;
+    private readonly IPointerInput? _pointerInput;
 
+    private PlayerShipMovementSystem? _shipMovementSystem;
     private GameSession? _session;
 
     private EntityId _shipEntity;
@@ -25,7 +28,8 @@ internal sealed class GameMain : EngineGame
 
     public GameMain(
         EngineRuntime runtime,
-        string startupScenePath)
+        string startupScenePath,
+        IPointerInput? pointerInput)
         : base(runtime)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(
@@ -33,6 +37,8 @@ internal sealed class GameMain : EngineGame
 
         _startupScenePath =
             Path.GetFullPath(startupScenePath);
+
+        _pointerInput = pointerInput;
     }
 
     protected override void ConfigureRuntime()
@@ -71,12 +77,15 @@ internal sealed class GameMain : EngineGame
                 MaxSpeed = 300.0f
             });
 
-        // Регистрируем управление до Initialize().
+        _shipMovementSystem = new PlayerShipMovementSystem(
+            ecs,
+            _shipEntity,
+            Runtime.Services.Input,
+            _pointerInput,
+            Runtime.Services.Camera);
+
         Runtime.Scheduler.Add(
-            new PlayerShipMovementSystem(
-                ecs,
-                _shipEntity,
-                Runtime.Services.Input),
+            _shipMovementSystem,
             SystemPhase.Update);
     }
 
@@ -84,9 +93,16 @@ internal sealed class GameMain : EngineGame
     {
         _session = GameSession.CreateNew();
 
+        // Игра начинается на паузе.
+        _session.Simulation.Time.Pause();
+
+        // Подключаем перемещение корабля к игровому времени.
+        _shipMovementSystem?.AttachGameTime(
+            _session.Simulation.Time);
+
         Runtime.Services.Camera.Zoom = 1.0f;
         Runtime.Services.Camera.Position =
-            new Vector2(0.0f, 0.0f);
+            new Vector2(0.0f, 0.0f); ;
 
         // Генерируем неподвижное звёздное поле.
         var random = new Random(12345);
@@ -112,8 +128,23 @@ internal sealed class GameMain : EngineGame
 
     protected override void OnUpdate(TimeSnapshot time)
     {
-        // Ввод обновляется базовым EngineGame.
-        // Движение выполняет PlayerShipMovementSystem.
+        if (_session is null)
+            return;
+
+        if (Runtime.Services.Input.IsPressed(
+                ShipInputActions.ToggleSimulation))
+        {
+            var gameTime = _session.Simulation.Time;
+
+            if (gameTime.IsPaused)
+            {
+                    gameTime.Resume();
+            }
+            else
+            {
+                gameTime.Pause();
+            }
+        }
     }
 
     protected override void OnRender(double interpolationAlpha)
@@ -188,6 +219,64 @@ internal sealed class GameMain : EngineGame
 
         var graphics = Runtime.Services.Graphics;
 
+        // Отображаем оставшийся маршрут корабля.
+        var movement = _shipMovementSystem;
+        var path = movement?.CurrentPath;
+
+        if (path is not null && movement is not null)
+        {
+            var previous = ship.Position;
+
+            for (var i = movement.NextWaypointIndex;
+                 i < path.Points.Count;
+                 i++)
+            {
+                var point = path.Points[i];
+
+                var next = new Vector2(
+                    (float)point.X,
+                    (float)point.Y);
+
+                graphics.Submit(
+                    new DrawDebugLineCommand(
+                        previous,
+                        next,
+                        DebugColor.Green,
+                        DebugRenderSpace.World));
+
+                previous = next;
+            }
+        }
+
+        // Маркер цели автопилота.
+        if (ship.HasDestination)
+        {
+            const float markerSize = 10.0f;
+            var target = ship.Destination;
+
+            graphics.Submit(
+                new DrawDebugLineCommand(
+                    new Vector2(
+                        target.X - markerSize,
+                        target.Y),
+                    new Vector2(
+                        target.X + markerSize,
+                        target.Y),
+                    DebugColor.Green,
+                    DebugRenderSpace.World));
+
+            graphics.Submit(
+                new DrawDebugLineCommand(
+                    new Vector2(
+                        target.X,
+                        target.Y - markerSize),
+                    new Vector2(
+                        target.X,
+                        target.Y + markerSize),
+                    DebugColor.Green,
+                    DebugRenderSpace.World));
+        }
+
         // Корпус.
         graphics.Submit(
             new DrawDebugLineCommand(
@@ -242,9 +331,34 @@ internal sealed class GameMain : EngineGame
                     DebugRenderSpace.World));
         }
 
+        var paused =
+            _session?.Simulation.Time.IsPaused ?? true;
+
+        var displayedSpeed =
+            !paused &&
+            _shipMovementSystem?.CurrentPath is not null
+                ? ship.MaxSpeed
+                : 0.0f;
+
+        var gameTime = _session?.Simulation.Time;
+
+        var status = gameTime?.IsPaused == true
+            ? "PAUSED"
+            : "RUNNING";
+
+        var day = gameTime?.DayNumber ?? 1;
+
         graphics.Submit(
             new DrawDebugTextCommand(
-                $"Speed: {MathF.Sqrt(ship.VelocityX * ship.VelocityX + ship.VelocityY * ship.VelocityY):0.0}",
+                $"DAY: {day} | {status}",
+                new Vector2(24.0f, 24.0f),
+                DebugColor.White,
+                2.0f,
+                DebugRenderSpace.Screen));
+
+        graphics.Submit(
+            new DrawDebugTextCommand(
+                $"Speed: {displayedSpeed:0.0} | {status}",
                 new Vector2(24.0f, 24.0f),
                 DebugColor.White,
                 2.0f,
@@ -264,6 +378,9 @@ internal sealed class GameMain : EngineGame
                 $"Game session ended: {_session.SessionId}");
 
             _session = null;
+
+            _shipMovementSystem?.Dispose();
+            _shipMovementSystem = null;
         }
     }
 

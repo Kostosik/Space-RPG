@@ -51,11 +51,16 @@ internal static class Program
             ShipInputActions.TurnRight,
             new InputBinding("Keyboard.Right"));
 
+        inputActions.Bind(
+    ShipInputActions.ToggleSimulation,
+    new InputBinding("Keyboard.Space"));
+
         DesktopGameHost.Run(
-        (DesktopGameHostContext context) => new GameMain(
-            context.Runtime,
-            startupScenePath),
-                new DesktopGameHostOptions
+            (DesktopGameHostContext context) => new GameMain(
+                context.Runtime,
+                startupScenePath,
+                context.PointerInput),
+                        new DesktopGameHostOptions
                 {
                     Title = "Space-RPG",
 
