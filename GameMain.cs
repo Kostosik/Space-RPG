@@ -11,6 +11,7 @@ using Engine.Serialization.SaveLoad.Ecs;
 using Engine.Serialization.SaveLoad.Worlds;
 using GameProject.Game;
 using GameProject.Player;
+using GameProject.Simulation;
 
 namespace GameProject;
 
@@ -25,7 +26,7 @@ internal sealed class GameMain : EngineGame
     private EntityId _shipEntity;
 
     private Vector2[] _stars = [];
-
+    private TurnExecutionController? _turnExecution;
     public GameMain(
         EngineRuntime runtime,
         string startupScenePath,
@@ -93,8 +94,22 @@ internal sealed class GameMain : EngineGame
     {
         _session = GameSession.CreateNew();
 
-        // Игра начинается на паузе.
-        _session.Simulation.Time.Pause();
+        var gameTime = _session.Simulation.Time;
+
+        // Игра начинается в режиме ожидания приказов.
+        gameTime.Pause();
+
+        // Один игровой день визуально проходит за 6 секунд.
+        gameTime.SetDayDuration(
+            TimeSpan.FromSeconds(6));
+
+        // Подключаем движение корабля к игровому времени.
+        _shipMovementSystem?.AttachGameTime(gameTime);
+
+        // Создаём контроллер исполнения приказов.
+        _turnExecution = new TurnExecutionController(
+            gameTime,
+            () => _shipMovementSystem?.HasActiveRoute == true);
 
         // Подключаем перемещение корабля к игровому времени.
         _shipMovementSystem?.AttachGameTime(
@@ -132,18 +147,13 @@ internal sealed class GameMain : EngineGame
             return;
 
         if (Runtime.Services.Input.IsPressed(
-                ShipInputActions.ToggleSimulation))
+                ShipInputActions.EndTurn))
         {
-            var gameTime = _session.Simulation.Time;
+            var shiftHeld =
+                Runtime.Services.Input.IsDown(
+                    ShipInputActions.Shift);
 
-            if (gameTime.IsPaused)
-            {
-                    gameTime.Resume();
-            }
-            else
-            {
-                gameTime.Pause();
-            }
+            _turnExecution?.PressEndTurn(shiftHeld);
         }
     }
 
@@ -220,8 +230,19 @@ internal sealed class GameMain : EngineGame
         var graphics = Runtime.Services.Graphics;
 
         // Отображаем оставшийся маршрут корабля.
+
+        var gameTime = _session?.Simulation.Time;
         var movement = _shipMovementSystem;
         var path = movement?.CurrentPath;
+
+        var availableDistanceToday = Math.Max(
+            0.0,
+            (double)ship.MaxSpeed *
+            (1.0 - (gameTime?.DayProgress ?? 0.0)));
+
+        var dailyDistanceRemaining = availableDistanceToday;
+
+        var untraveledColor = new DebugColor(255, 165, 0);
 
         if (path is not null && movement is not null)
         {
@@ -237,16 +258,69 @@ internal sealed class GameMain : EngineGame
                     (float)point.X,
                     (float)point.Y);
 
-                graphics.Submit(
-                    new DrawDebugLineCommand(
-                        previous,
-                        next,
-                        DebugColor.Green,
-                        DebugRenderSpace.World));
+                var dx = next.X - previous.X;
+                var dy = next.Y - previous.Y;
+
+                var segmentLength = Math.Sqrt(
+                    (double)dx * dx +
+                    (double)dy * dy);
+
+                if (segmentLength <= 0.000001)
+                {
+                    previous = next;
+                    continue;
+                }
+
+                // Часть, которую корабль сможет преодолеть
+                // до окончания текущего игрового дня.
+                var greenDistance = Math.Min(
+                    dailyDistanceRemaining,
+                    segmentLength);
+
+
+
+                if (greenDistance > 0.0)
+                {
+                    var ratio =
+                        greenDistance / segmentLength;
+
+                    var split = new Vector2(
+                        previous.X + dx * (float)ratio,
+                        previous.Y + dy * (float)ratio);
+
+                    graphics.Submit(
+                        new DrawDebugLineCommand(
+                            previous,
+                            split,
+                            DebugColor.Green,
+                            DebugRenderSpace.World));
+
+                    dailyDistanceRemaining -= greenDistance;
+
+                    if (greenDistance < segmentLength)
+                    {
+                        graphics.Submit(
+                            new DrawDebugLineCommand(
+                                split,
+                                next,
+                                untraveledColor,
+                                DebugRenderSpace.World));
+                    }
+                }
+                else
+                {
+                    graphics.Submit(
+                        new DrawDebugLineCommand(
+                            previous,
+                            next,
+                            DebugColor.Yellow,
+                            DebugRenderSpace.World));
+                }
 
                 previous = next;
             }
         }
+
 
         // Маркер цели автопилота.
         if (ship.HasDestination)
@@ -340,25 +414,31 @@ internal sealed class GameMain : EngineGame
                 ? ship.MaxSpeed
                 : 0.0f;
 
-        var gameTime = _session?.Simulation.Time;
-
-        var status = gameTime?.IsPaused == true
-            ? "PAUSED"
-            : "RUNNING";
-
         var day = gameTime?.DayNumber ?? 1;
+        var progress = gameTime?.DayProgress ?? 0.0;
+
+        var routeInfo = "NO ROUTE";
+
+        if (path is not null && ship.MaxSpeed > 0.0f)
+        {
+            var remainingRoute = Math.Max(
+                0.0,
+                path.Length - movement!.DistanceTravelled);
+
+            var daysRemaining =
+                remainingRoute <= dailyDistanceRemaining
+                    ? 1
+                    : 1 + (int)Math.Ceiling(
+                        (remainingRoute - dailyDistanceRemaining) /
+                        ship.MaxSpeed);
+
+            routeInfo = $"ETA: {daysRemaining} DAY(S)";
+        }
 
         graphics.Submit(
             new DrawDebugTextCommand(
-                $"DAY: {day} | {status}",
-                new Vector2(24.0f, 24.0f),
-                DebugColor.White,
-                2.0f,
-                DebugRenderSpace.Screen));
-
-        graphics.Submit(
-            new DrawDebugTextCommand(
-                $"Speed: {displayedSpeed:0.0} | {status}",
+                $"DAY: {day} | {progress:P0} | " +
+                $"{(paused ? "PAUSED" : "RUNNING")} | {routeInfo}",
                 new Vector2(24.0f, 24.0f),
                 DebugColor.White,
                 2.0f,
@@ -372,15 +452,18 @@ internal sealed class GameMain : EngineGame
 
     protected override void OnShutdown()
     {
+        _turnExecution?.Dispose();
+        _turnExecution = null;
+
+        _shipMovementSystem?.Dispose();
+        _shipMovementSystem = null;
+
         if (_session is not null)
         {
             Console.WriteLine(
                 $"Game session ended: {_session.SessionId}");
 
             _session = null;
-
-            _shipMovementSystem?.Dispose();
-            _shipMovementSystem = null;
         }
     }
 

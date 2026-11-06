@@ -52,8 +52,16 @@ internal static class Program
             new InputBinding("Keyboard.Right"));
 
         inputActions.Bind(
-    ShipInputActions.ToggleSimulation,
-    new InputBinding("Keyboard.Space"));
+            ShipInputActions.EndTurn,
+            new InputBinding("Keyboard.Space"));
+
+        inputActions.Bind(
+            ShipInputActions.Shift,
+            new InputBinding("Keyboard.ShiftLeft"));
+
+        inputActions.Bind(
+            ShipInputActions.Shift,
+            new InputBinding("Keyboard.ShiftRight"));
 
         DesktopGameHost.Run(
             (DesktopGameHostContext context) => new GameMain(

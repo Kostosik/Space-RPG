@@ -16,6 +16,9 @@ public static class ShipInputActions
     public static readonly InputAction TurnRight =
         new("TurnRight");
 
-    public static readonly InputAction ToggleSimulation =
-    new("ToggleSimulation");
+    public static readonly InputAction EndTurn =
+        new("EndTurn");
+
+    public static readonly InputAction Shift =
+        new("Shift");
 }

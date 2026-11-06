@@ -40,6 +40,12 @@ public sealed class PlayerShipMovementSystem :
     private NavigationPath? _path;
     private int _nextWaypointIndex;
 
+    private double _distanceTravelled;
+
+    public bool HasActiveRoute => _path is not null;
+
+    public double DistanceTravelled => _distanceTravelled;
+
     private GameTime? _gameTime;
     private bool _disposed;
 
@@ -108,13 +114,21 @@ public sealed class PlayerShipMovementSystem :
             return;
         }
 
+        // Менять маршрут можно только во время паузы.
+        if (_gameTime is not null && !_gameTime.IsPaused)
+            return;
+
+        if (!_world.Exists(_shipEntity) ||
+            !_world.Has<PlayerShipComponent>(_shipEntity))
+        {
+            return;
+        }
+
+        ClearPath();
+
         ref var ship =
             ref _world.Get<PlayerShipComponent>(_shipEntity);
 
-        // Новый клик полностью заменяет предыдущий маршрут.
-        ClearPath();
-
-        // Переводим позицию мыши в мировые координаты.
         var target = _camera.ScreenToWorld(
             _pointerInput.Position);
 
@@ -132,7 +146,6 @@ public sealed class PlayerShipMovementSystem :
             target.X,
             target.Y);
 
-        // Автоматически строим маршрут с обходом препятствий.
         var path = _pathfinder.FindPath(
             start,
             goal,
@@ -143,6 +156,7 @@ public sealed class PlayerShipMovementSystem :
 
         _path = path;
         _nextWaypointIndex = 1;
+        _distanceTravelled = 0.0;
 
         ship.Destination = target;
         ship.HasDestination = true;
@@ -160,11 +174,12 @@ public sealed class PlayerShipMovementSystem :
             return;
         }
 
-        var deltaSeconds =
-            (float)advanced.Delta.Value.TotalSeconds;
+        var dayFraction =
+            (double)advanced.Delta.Value.Ticks /
+            TimeSpan.TicksPerDay;
 
-        if (!float.IsFinite(deltaSeconds) ||
-            deltaSeconds <= 0.0f)
+        if (!double.IsFinite(dayFraction) ||
+            dayFraction <= 0.0)
         {
             return;
         }
@@ -181,7 +196,7 @@ public sealed class PlayerShipMovementSystem :
         // За игровой интервал корабль должен пройти
         // ровно Speed * DeltaDistance.
         var remainingDistance =
-            (double)ship.MaxSpeed * deltaSeconds;
+            (double)ship.MaxSpeed * dayFraction;
 
         var points = _path.Points;
 
@@ -222,33 +237,33 @@ public sealed class PlayerShipMovementSystem :
             // чем можем пройти за этот игровой интервал.
             if (remainingDistance < distance)
             {
+                var fraction = remainingDistance / distance;
+
                 ship.Position = new Vector2(
-                    ship.Position.X +
-                    directionX * (float)remainingDistance,
+                    ship.Position.X + dx * (float)fraction,
+                    ship.Position.Y + dy * (float)fraction);
 
-                    ship.Position.Y +
-                    directionY * (float)remainingDistance);
-
+                _distanceTravelled += remainingDistance;
                 return;
             }
 
-            // Полностью проходим текущий сегмент.
+            // Достигли промежуточной точки.
             ship.Position = target;
 
+            _distanceTravelled += distance;
             remainingDistance -= distance;
+
             _nextWaypointIndex++;
         }
         // Корабль достиг конечной точки.
         ClearPath();
-
-        // Завершаем игровые сутки.
-        _gameTime?.CompleteDay();
     }
 
     private void ClearPath()
     {
         _path = null;
         _nextWaypointIndex = 0;
+        _distanceTravelled = 0.0;
 
         if (_world.Exists(_shipEntity) &&
             _world.Has<PlayerShipComponent>(_shipEntity))
