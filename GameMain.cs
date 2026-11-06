@@ -24,7 +24,8 @@ internal sealed class GameMain : EngineGame
 
     private string _galaxyMapMessage =
         "SELECT A STAR SYSTEM";
-
+    private bool _isLanded;
+    private StarSystemObject? _landedObject;
     private const float GalaxyMapCenterX = 600.0f;
     private const float GalaxyMapCenterY = 360.0f;
     private const float GalaxyMapScale = 0.65f;
@@ -114,7 +115,14 @@ internal sealed class GameMain : EngineGame
         _shipMovementSystem?.SetNavigationObstacles(
     _session.World.StarSystem.NavigationObstacles);
         var gameTime = _session.Simulation.Time;
+        _shipMovementSystem?.SetLandingObjects(
+    _session.World.StarSystem.Objects);
 
+        if (_shipMovementSystem is not null)
+        {
+            _shipMovementSystem.LandingCompleted +=
+                OnLandingCompleted;
+        }
         // Игра начинается в режиме ожидания приказов.
         gameTime.Pause();
 
@@ -164,7 +172,11 @@ internal sealed class GameMain : EngineGame
     {
         if (_session is null)
             return;
-
+        if (_isLanded)
+        {
+            HandlePlanetScreenInput();
+            return;
+        }
         if (Runtime.Services.Input.IsPressed(
         ShipInputActions.ToggleGalaxyMap))
         {
@@ -251,7 +263,8 @@ internal sealed class GameMain : EngineGame
 
         // Загружаем новую звёздную систему.
         _session.World.EnterSystem(target.Id);
-
+        _shipMovementSystem?.SetLandingObjects(
+    _session.World.StarSystem.Objects);
         // Обновляем препятствия для навигации.
         _shipMovementSystem?.SetNavigationObstacles(
             _session.World.StarSystem.NavigationObstacles);
@@ -268,6 +281,55 @@ internal sealed class GameMain : EngineGame
         {
             _shipMovementSystem.AcceptPointerCommands = true;
         }
+    }
+
+    private void OnLandingCompleted(
+    StarSystemObject landingObject)
+    {
+        _landedObject = landingObject;
+        _isLanded = true;
+
+        if (_shipMovementSystem is not null)
+        {
+            _shipMovementSystem.AcceptPointerCommands = false;
+        }
+
+        // Останавливаем игровое время после посадки.
+        _session?.Simulation.Time.Pause();
+    }
+
+    private void HandlePlanetScreenInput()
+    {
+        if (_pointerInput is null ||
+            !_pointerInput.IsPressed(InputMouseButton.Left))
+        {
+            return;
+        }
+
+        var position = _pointerInput.Position;
+
+        // Кнопка взлёта.
+        if (position.X >= 500.0f &&
+            position.X <= 780.0f &&
+            position.Y >= 590.0f &&
+            position.Y <= 654.0f)
+        {
+            TakeOffFromPlanet();
+        }
+    }
+
+    private void TakeOffFromPlanet()
+    {
+        _isLanded = false;
+        _landedObject = null;
+
+        if (_shipMovementSystem is not null)
+        {
+            _shipMovementSystem.AcceptPointerCommands = true;
+        }
+
+        // Время оставляем на паузе.
+        // Игрок сам решит, когда продолжить ход.
     }
 
     private void DrawGalaxyMap()
@@ -902,7 +964,10 @@ internal sealed class GameMain : EngineGame
         {
             DrawGalaxyMap();
         }
-
+        if (_isLanded)
+        {
+            DrawPlanetScreen();
+        }
         DrawPlanetTooltip();
 
         graphics.Submit(
@@ -915,6 +980,109 @@ internal sealed class GameMain : EngineGame
                 DebugRenderSpace.Screen));
     }
 
+    private void DrawPlanetScreen()
+    {
+        var graphics = Runtime.Services.Graphics;
+
+        graphics.Submit(
+            new DrawUiRectangleCommand(
+                new Vector2(0, 0),
+                new Vector2(1280, 720),
+                new UiColor(4, 10, 24, 255)));
+
+        graphics.Submit(
+            new DrawUiRectangleCommand(
+                new Vector2(54, 45),
+                new Vector2(1172, 630),
+                new UiColor(9, 25, 43, 255)));
+
+        graphics.Submit(
+            new DrawUiRectangleCommand(
+                new Vector2(78, 72),
+                new Vector2(1124, 62),
+                new UiColor(20, 64, 90, 255)));
+
+        var name = _landedObject?.Name ?? "UNKNOWN";
+
+        var objectType = _landedObject switch
+        {
+            PlanetObject => "PLANETARY SURFACE",
+            StationObject => "SPACE STATION",
+            _ => "UNKNOWN LOCATION"
+        };
+
+        var description = _landedObject switch
+        {
+            PlanetObject planet => planet.Description,
+            StationObject station => station.Description,
+            _ => "No information available."
+        };
+
+        DrawLandingText(
+            "LANDING CONFIRMED",
+            new Vector2(100, 90),
+            new DebugColor(110, 220, 255),
+            2.0f);
+
+        DrawLandingText(
+            name.ToUpperInvariant(),
+            new Vector2(100, 190),
+            DebugColor.White,
+            3.0f);
+
+        DrawLandingText(
+            objectType,
+            new Vector2(100, 250),
+            new DebugColor(100, 200, 255),
+            1.8f);
+
+        DrawLandingText(
+            description,
+            new Vector2(100, 315),
+            new DebugColor(190, 210, 225),
+            1.5f);
+
+        DrawLandingText(
+            "SHIP STATUS: LANDED",
+            new Vector2(100, 430),
+            new DebugColor(100, 255, 170),
+            1.8f);
+
+        DrawLandingText(
+            "Planetary services will be available here.",
+            new Vector2(100, 475),
+            new DebugColor(150, 180, 205),
+            1.4f);
+
+        // Кнопка взлёта.
+        graphics.Submit(
+            new DrawUiRectangleCommand(
+                new Vector2(500, 590),
+                new Vector2(280, 64),
+                new UiColor(24, 100, 130, 255)));
+
+        DrawLandingText(
+            "TAKE OFF",
+            new Vector2(585, 610),
+            DebugColor.White,
+            2.0f);
+    }
+
+    private void DrawLandingText(
+        string text,
+        Vector2 position,
+        DebugColor color,
+        float scale)
+    {
+        Runtime.Services.Graphics.Submit(
+            new DrawDebugTextCommand(
+                text,
+                position,
+                color,
+                scale,
+                DebugRenderSpace.Screen));
+    }
+
     protected override void OnFixedUpdate(SimulationTime time)
     {
         _session?.Simulation.FixedUpdate(time);
@@ -924,7 +1092,11 @@ internal sealed class GameMain : EngineGame
     {
         _turnExecution?.Dispose();
         _turnExecution = null;
-
+        if (_shipMovementSystem is not null)
+        {
+            _shipMovementSystem.LandingCompleted -=
+                OnLandingCompleted;
+        }
         _shipMovementSystem?.Dispose();
         _shipMovementSystem = null;
 

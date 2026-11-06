@@ -6,6 +6,7 @@ using Engine.ECS.Entities;
 using Engine.Input;
 using GameProject.Navigation;
 using GameProject.Simulation;
+using GameProject.World;
 
 namespace GameProject.Player;
 
@@ -23,6 +24,13 @@ public sealed class PlayerShipMovementSystem :
     IUpdateSystem,
     IDisposable
 {
+    private IReadOnlyList<StarSystemObject> _landingObjects =
+    Array.Empty<StarSystemObject>();
+
+    private StarSystemObject? _pendingLandingTarget;
+
+    public event Action<StarSystemObject>? LandingCompleted;
+
     public bool AcceptPointerCommands { get; set; } = true;
     private const double PathEpsilon = 0.000001;
     private IReadOnlyList<NavigationCircleObstacle> _obstacles;
@@ -106,6 +114,13 @@ public sealed class PlayerShipMovementSystem :
         TrySetDestination();
     }
 
+    public void SetLandingObjects(
+    IReadOnlyList<StarSystemObject> objects)
+    {
+        ArgumentNullException.ThrowIfNull(objects);
+        _landingObjects = objects;
+    }
+
     private void TrySetDestination()
     {
         if (!AcceptPointerCommands ||
@@ -115,7 +130,7 @@ public sealed class PlayerShipMovementSystem :
             return;
         }
 
-        // Менять маршрут можно только во время паузы.
+        // Новый маршрут задаём только на паузе.
         if (_gameTime is not null && !_gameTime.IsPaused)
             return;
 
@@ -139,6 +154,19 @@ public sealed class PlayerShipMovementSystem :
             return;
         }
 
+        // Проверяем, не кликнул ли игрок по планете
+        // или космической станции.
+        var landingTarget = FindLandingTarget(target);
+
+        // Если это объект для посадки, направляем корабль
+        // к точке рядом с его поверхностью.
+        if (landingTarget is not null)
+        {
+            target = GetLandingApproachPoint(
+                landingTarget,
+                ship.Position);
+        }
+
         var start = new NavigationVector2(
             ship.Position.X,
             ship.Position.Y);
@@ -152,15 +180,92 @@ public sealed class PlayerShipMovementSystem :
             goal,
             _obstacles);
 
-        if (path is null || path.Length <= PathEpsilon)
+        if (path is null)
             return;
+
+        // Если корабль уже находится в точке посадки.
+        if (path.Length <= PathEpsilon)
+        {
+            if (landingTarget is not null)
+                LandingCompleted?.Invoke(landingTarget);
+
+            return;
+        }
 
         _path = path;
         _nextWaypointIndex = 1;
         _distanceTravelled = 0.0;
 
+        _pendingLandingTarget = landingTarget;
+
         ship.Destination = target;
         ship.HasDestination = true;
+    }
+
+    private StarSystemObject? FindLandingTarget(
+    Vector2 worldPosition)
+    {
+        StarSystemObject? closest = null;
+        var bestDistanceSquared = double.MaxValue;
+
+        foreach (var obj in _landingObjects)
+        {
+            if (obj is not PlanetObject &&
+                obj is not StationObject)
+            {
+                continue;
+            }
+
+            var dx = worldPosition.X - obj.X;
+            var dy = worldPosition.Y - obj.Y;
+
+            var distanceSquared =
+                dx * dx + dy * dy;
+
+            // Небольшая зона выбора вокруг объекта.
+            var selectionRadius = obj.VisualRadius + 18.0;
+            var selectionRadiusSquared =
+                selectionRadius * selectionRadius;
+
+            if (distanceSquared > selectionRadiusSquared)
+                continue;
+
+            if (distanceSquared < bestDistanceSquared)
+            {
+                bestDistanceSquared = distanceSquared;
+                closest = obj;
+            }
+        }
+
+        return closest;
+    }
+
+    private static Vector2 GetLandingApproachPoint(
+        StarSystemObject target,
+        Vector2 shipPosition)
+    {
+        var dx = shipPosition.X - target.X;
+        var dy = shipPosition.Y - target.Y;
+
+        var distance = Math.Sqrt(
+            (double)dx * dx +
+            (double)dy * dy);
+
+        if (distance < 0.000001)
+        {
+            dx = 1.0f;
+            dy = 0.0f;
+            distance = 1.0;
+        }
+
+        const double shipClearance = 28.0;
+
+        var approachDistance =
+            target.VisualRadius + shipClearance;
+
+        return new Vector2(
+            (float)(target.X + dx / distance * approachDistance),
+            (float)(target.Y + dy / distance * approachDistance));
     }
 
     public void ResetForSystemTransition(
@@ -275,7 +380,14 @@ public sealed class PlayerShipMovementSystem :
             _nextWaypointIndex++;
         }
         // Корабль достиг конечной точки.
+        var completedLanding = _pendingLandingTarget;
+
         ClearPath();
+
+        if (completedLanding is not null)
+        {
+            LandingCompleted?.Invoke(completedLanding);
+        }
     }
 
     public void SetNavigationObstacles(
@@ -290,7 +402,7 @@ public sealed class PlayerShipMovementSystem :
         _path = null;
         _nextWaypointIndex = 0;
         _distanceTravelled = 0.0;
-
+        _pendingLandingTarget = null;
         if (_world.Exists(_shipEntity) &&
             _world.Has<PlayerShipComponent>(_shipEntity))
         {
