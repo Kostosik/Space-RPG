@@ -1,0 +1,226 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Engine.Animation">
+      <HintPath>Engine\Engine.Animation.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Audio">
+      <HintPath>Engine\Engine.Audio.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Audio.OpenAL">
+      <HintPath>Engine\Engine.Audio.OpenAL.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Camera">
+      <HintPath>Engine\Engine.Camera.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Content">
+      <HintPath>Engine\Engine.Content.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Core">
+      <HintPath>Engine\Engine.Core.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.ECS">
+      <HintPath>Engine\Engine.ECS.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Graphics">
+      <HintPath>Engine\Engine.Graphics.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Graphics.OpenGL">
+      <HintPath>Engine\Engine.Graphics.OpenGL.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Graphics2D">
+      <HintPath>Engine\Engine.Graphics2D.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Hosting.Desktop">
+      <HintPath>Engine\Engine.Hosting.Desktop.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Hosting">
+      <HintPath>Engine\Engine.Hosting.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Input">
+      <HintPath>Engine\Engine.Input.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Input.SilkNet">
+      <HintPath>Engine\Engine.Input.SilkNet.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Jobs">
+      <HintPath>Engine\Engine.Jobs.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Localization">
+      <HintPath>Engine\Engine.Localization.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Memory">
+      <HintPath>Engine\Engine.Memory.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Navigation">
+      <HintPath>Engine\Engine.Navigation.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Networking">
+      <HintPath>Engine\Engine.Networking.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Networking.Replication">
+      <HintPath>Engine\Engine.Networking.Replication.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Particles">
+      <HintPath>Engine\Engine.Particles.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Physics">
+      <HintPath>Engine\Engine.Physics.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Runtime">
+      <HintPath>Engine\Engine.Runtime.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Scripting">
+      <HintPath>Engine\Engine.Scripting.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Serialization">
+      <HintPath>Engine\Engine.Serialization.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Simulations">
+      <HintPath>Engine\Engine.Simulations.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Tooling">
+      <HintPath>Engine\Engine.Tooling.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Transform">
+      <HintPath>Engine\Engine.Transform.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.UI">
+      <HintPath>Engine\Engine.UI.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Engine.Worlds">
+      <HintPath>Engine\Engine.Worlds.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Microsoft.DotNet.PlatformAbstractions">
+      <HintPath>Engine\Microsoft.DotNet.PlatformAbstractions.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.DependencyModel">
+      <HintPath>Engine\Microsoft.Extensions.DependencyModel.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Silk.NET.Core">
+      <HintPath>Engine\Silk.NET.Core.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Silk.NET.GLFW">
+      <HintPath>Engine\Silk.NET.GLFW.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Silk.NET.Input.Common">
+      <HintPath>Engine\Silk.NET.Input.Common.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Silk.NET.Input.Glfw">
+      <HintPath>Engine\Silk.NET.Input.Glfw.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Silk.NET.Maths">
+      <HintPath>Engine\Silk.NET.Maths.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Silk.NET.OpenAL">
+      <HintPath>Engine\Silk.NET.OpenAL.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Silk.NET.OpenGL">
+      <HintPath>Engine\Silk.NET.OpenGL.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Silk.NET.Windowing.Common">
+      <HintPath>Engine\Silk.NET.Windowing.Common.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Silk.NET.Windowing.Glfw">
+      <HintPath>Engine\Silk.NET.Windowing.Glfw.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="StbiSharp">
+      <HintPath>Engine\StbiSharp.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="StbTrueTypeSharp">
+      <HintPath>Engine\StbTrueTypeSharp.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="System.IO.Pipelines">
+      <HintPath>Engine\System.IO.Pipelines.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="System.Text.Encodings.Web">
+      <HintPath>Engine\System.Text.Encodings.Web.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="System.Text.Json">
+      <HintPath>Engine\System.Text.Json.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Engine\glfw3.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <TargetPath>glfw3.dll</TargetPath>
+    </None>
+    <None Update="Engine\soft_oal.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <TargetPath>soft_oal.dll</TargetPath>
+    </None>
+    <None Update="Engine\stbi.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <TargetPath>stbi.dll</TargetPath>
+    </None>
+    <None Update="Assets/**/*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <None Update="Scenes/**/*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <None Update="*.vibeproject">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+</Project>

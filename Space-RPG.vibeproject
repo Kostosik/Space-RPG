@@ -1,0 +1,6 @@
+{
+  "formatVersion": 1,
+  "name": "Space-RPG",
+  "startupProject": "Space-RPG.csproj",
+  "startupScene": "Scenes/Main.world"
+}
