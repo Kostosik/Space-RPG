@@ -1,17 +1,19 @@
 using Engine.Core.Math;
+using Engine.Core.Time;
 using Engine.Graphics.Commands;
 using Engine.Graphics.DebugGraphics;
+using Engine.Networking.Replication;
 using Engine.Runtime;
 using Engine.Serialization.SaveLoad.Ecs;
 using Engine.Serialization.SaveLoad.Worlds;
-using Engine.Networking.Replication;
+using GameProject.Game;
 
 namespace GameProject;
 
 internal sealed class GameMain : EngineGame
 {
     private readonly string _startupScenePath;
-
+    private GameSession? _session;
     public GameMain(
         EngineRuntime runtime,
         string startupScenePath)
@@ -50,11 +52,13 @@ internal sealed class GameMain : EngineGame
 
     protected override void OnInitialize()
     {
-        Console.WriteLine(
-            $"Startup scene loaded: {_startupScenePath}");
+        _session = GameSession.CreateNew();
 
         Console.WriteLine(
-            "VibeEngine2 game initialized.");
+            $"Game session created: {_session.SessionId}");
+
+        Console.WriteLine(
+            $"World created: {_session.World.Id}");
     }
 
     protected override void OnRender(
@@ -69,9 +73,19 @@ internal sealed class GameMain : EngineGame
                 DebugRenderSpace.Screen));
     }
 
+    protected override void OnFixedUpdate(SimulationTime time)
+    {
+        _session?.Simulation.FixedUpdate(time);
+    }
+
     protected override void OnShutdown()
     {
-        Console.WriteLine(
-            "VibeEngine2 game stopped.");
+        if (_session is not null)
+        {
+            Console.WriteLine(
+                $"Game session ended: {_session.SessionId}");
+
+            _session = null;
+        }
     }
 }

@@ -1,0 +1,9 @@
+﻿namespace GameProject.Player;
+
+/// <summary>
+/// Persistent state owned by the player.
+/// Does not contain UI or engine runtime objects.
+/// </summary>
+public sealed class PlayerState
+{
+}
