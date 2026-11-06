@@ -6,4 +6,5 @@
 /// </summary>
 public sealed class PlayerState
 {
+    public GalaxyNavigationState GalaxyNavigation { get; } = new();
 }

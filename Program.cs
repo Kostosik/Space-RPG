@@ -20,6 +20,14 @@ internal static class Program
         var inputActions = new InputActionMap();
 
         inputActions.Bind(
+    ShipInputActions.ToggleGalaxyMap,
+    new InputBinding("Keyboard.M"));
+
+        inputActions.Bind(
+            ShipInputActions.GalaxyJump,
+            new InputBinding("Keyboard.Enter"));
+
+        inputActions.Bind(
             ShipInputActions.Thrust,
             new InputBinding("Keyboard.W"));
 

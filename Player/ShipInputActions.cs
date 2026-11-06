@@ -21,4 +21,10 @@ public static class ShipInputActions
 
     public static readonly InputAction Shift =
         new("Shift");
+
+    public static readonly InputAction ToggleGalaxyMap =
+    new("ToggleGalaxyMap");
+
+    public static readonly InputAction GalaxyJump =
+        new("GalaxyJump");
 }

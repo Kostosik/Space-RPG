@@ -18,6 +18,20 @@ namespace GameProject;
 
 internal sealed class GameMain : EngineGame
 {
+    private bool _isGalaxyMapOpen;
+
+    private string _selectedGalaxySystemId = "sol";
+
+    private string _galaxyMapMessage =
+        "SELECT A STAR SYSTEM";
+
+    private const float GalaxyMapCenterX = 600.0f;
+    private const float GalaxyMapCenterY = 360.0f;
+    private const float GalaxyMapScale = 0.65f;
+
+    private const int GalaxyJumpFuelCost = 10;
+
+
     private readonly string _startupScenePath;
     private readonly IPointerInput? _pointerInput;
 
@@ -28,6 +42,9 @@ internal sealed class GameMain : EngineGame
 
     private Vector2[] _stars = [];
     private TurnExecutionController? _turnExecution;
+    private PlanetObject? _hoveredPlanet;
+    private DateTime _planetHoverStartedAt;
+    private const double PlanetHoverDelaySeconds = 0.5;
     public GameMain(
         EngineRuntime runtime,
         string startupScenePath,
@@ -149,6 +166,34 @@ internal sealed class GameMain : EngineGame
             return;
 
         if (Runtime.Services.Input.IsPressed(
+        ShipInputActions.ToggleGalaxyMap))
+        {
+            _isGalaxyMapOpen = !_isGalaxyMapOpen;
+
+            _shipMovementSystem?.GetType();
+
+            if (_isGalaxyMapOpen)
+            {
+                _selectedGalaxySystemId =
+                    _session.Player.GalaxyNavigation.CurrentSystemId;
+
+                _galaxyMapMessage = "SELECT A STAR SYSTEM";
+            }
+
+            if (_shipMovementSystem is not null)
+            {
+                _shipMovementSystem.AcceptPointerCommands =
+                    !_isGalaxyMapOpen;
+            }
+        }
+
+        if (_isGalaxyMapOpen)
+        {
+            HandleGalaxyMapInput();
+            return;
+        }
+
+        if (Runtime.Services.Input.IsPressed(
                 ShipInputActions.EndTurn))
         {
             var shiftHeld =
@@ -157,6 +202,391 @@ internal sealed class GameMain : EngineGame
 
             _turnExecution?.PressEndTurn(shiftHeld);
         }
+    }
+
+    private void TryGalaxyJump()
+    {
+        if (_session is null)
+            return;
+
+        var galaxy = _session.World.Galaxy;
+
+        var navigation =
+            _session.Player.GalaxyNavigation;
+
+        var target = galaxy.GetSystem(
+            _selectedGalaxySystemId);
+
+        if (target is null)
+            return;
+
+        if (!galaxy.CanTravel(
+                navigation.CurrentSystemId,
+                target.Id))
+        {
+            _galaxyMapMessage =
+                "NO HYPERSPACE CONNECTION";
+
+            return;
+        }
+
+        if (navigation.Fuel < GalaxyJumpFuelCost)
+        {
+            _galaxyMapMessage =
+                "NOT ENOUGH FUEL";
+
+            return;
+        }
+
+        if (!navigation.TryJump(
+                galaxy,
+                target.Id,
+                GalaxyJumpFuelCost))
+        {
+            _galaxyMapMessage =
+                "JUMP FAILED";
+
+            return;
+        }
+
+        // Загружаем новую звёздную систему.
+        _session.World.EnterSystem(target.Id);
+
+        // Обновляем препятствия для навигации.
+        _shipMovementSystem?.SetNavigationObstacles(
+            _session.World.StarSystem.NavigationObstacles);
+
+        // Перемещаем корабль в новую систему.
+        _shipMovementSystem?.ResetForSystemTransition(
+            new Vector2(-100.0f, 0.0f));
+
+        _galaxyMapMessage = "HYPERSPACE JUMP COMPLETE";
+
+        _isGalaxyMapOpen = false;
+
+        if (_shipMovementSystem is not null)
+        {
+            _shipMovementSystem.AcceptPointerCommands = true;
+        }
+    }
+
+    private void DrawGalaxyMap()
+    {
+        if (_session is null)
+            return;
+
+        var graphics = Runtime.Services.Graphics;
+        var galaxy = _session.World.Galaxy;
+
+        var navigation =
+            _session.Player.GalaxyNavigation;
+
+        // Затемняем игровой мир.
+        graphics.Submit(
+            new DrawUiRectangleCommand(
+                new Vector2(0, 0),
+                new Vector2(1280, 720),
+                new UiColor(5, 9, 22, 235)));
+
+        // Заголовок.
+        DrawGalaxyText(
+            "GALACTIC NAVIGATION",
+            new Vector2(35, 30),
+            new DebugColor(100, 200, 255),
+            3.0f);
+
+        DrawGalaxyText(
+            $"FUEL: {navigation.Fuel}/{navigation.FuelCapacity}",
+            new Vector2(35, 80),
+            DebugColor.White);
+
+        DrawGalaxyText(
+            $"CURRENT SYSTEM: {navigation.CurrentSystemId.ToUpperInvariant()}",
+            new Vector2(35, 110),
+            DebugColor.Green);
+
+        // Гиперпереходы.
+        foreach (var system in galaxy.Systems)
+        {
+            var start = GetGalaxyScreenPosition(system);
+
+            foreach (var connectionId in system.Connections)
+            {
+                if (string.CompareOrdinal(
+                        system.Id,
+                        connectionId) >= 0)
+                {
+                    continue;
+                }
+
+                var connected = galaxy.GetSystem(connectionId);
+
+                if (connected is null)
+                    continue;
+
+                var end = GetGalaxyScreenPosition(connected);
+
+                graphics.Submit(
+                    new DrawDebugLineCommand(
+                        start,
+                        end,
+                        new DebugColor(35, 90, 145),
+                        DebugRenderSpace.Screen));
+            }
+        }
+
+        // Звёздные системы.
+        foreach (var system in galaxy.Systems)
+        {
+            var position = GetGalaxyScreenPosition(system);
+
+            var isCurrent =
+                system.Id == navigation.CurrentSystemId;
+
+            var isSelected =
+                system.Id == _selectedGalaxySystemId;
+
+            var color = isCurrent
+                ? new DebugColor(80, 255, 130)
+                : isSelected
+                    ? new DebugColor(255, 210, 80)
+                    : new DebugColor(100, 180, 255);
+
+            DrawGalaxyCircle(
+                position,
+                isSelected ? 13.0f : 8.0f,
+                color);
+
+            DrawGalaxyText(
+                system.Name,
+                new Vector2(
+                    position.X + 16,
+                    position.Y - 7),
+                color,
+                1.5f);
+        }
+
+        // Информация о выбранной системе.
+        var selected = galaxy.GetSystem(
+            _selectedGalaxySystemId);
+
+        if (selected is not null)
+        {
+            var panelPosition = new Vector2(900, 190);
+
+            graphics.Submit(
+                new DrawDebugLineCommand(
+                    new Vector2(880, 170),
+                    new Vector2(880, 470),
+                    new DebugColor(50, 110, 160),
+                    DebugRenderSpace.Screen));
+
+            DrawGalaxyText(
+                "SYSTEM INFORMATION",
+                panelPosition,
+                new DebugColor(100, 200, 255),
+                2.0f);
+
+            DrawGalaxyText(
+                selected.Name,
+                new Vector2(900, 230),
+                DebugColor.White,
+                2.0f);
+
+            var isConnected = galaxy.CanTravel(
+                navigation.CurrentSystemId,
+                selected.Id);
+
+            DrawGalaxyText(
+                isConnected
+                    ? "HYPERSPACE: AVAILABLE"
+                    : "HYPERSPACE: UNAVAILABLE",
+                new Vector2(900, 280),
+                isConnected
+                    ? DebugColor.Green
+                    : DebugColor.Red);
+
+            DrawGalaxyText(
+                $"JUMP COST: {GalaxyJumpFuelCost} FUEL",
+                new Vector2(900, 320),
+                DebugColor.White);
+
+            DrawGalaxyText(
+                $"REMAINING: {navigation.Fuel} FUEL",
+                new Vector2(900, 350),
+                DebugColor.White);
+
+            DrawGalaxyText(
+                selected.Id == navigation.CurrentSystemId
+                    ? "CURRENT LOCATION"
+                    : isConnected && navigation.Fuel >= GalaxyJumpFuelCost
+                        ? "PRESS ENTER TO JUMP"
+                        : "JUMP NOT AVAILABLE",
+                new Vector2(900, 410),
+                new DebugColor(255, 210, 80));
+        }
+
+        DrawGalaxyText(
+            _galaxyMapMessage,
+            new Vector2(35, 640),
+            new DebugColor(100, 220, 255));
+
+        DrawGalaxyText(
+            "M - CLOSE MAP    LEFT CLICK - SELECT    ENTER - HYPERSPACE JUMP",
+            new Vector2(35, 675),
+            DebugColor.White,
+            1.5f);
+    }
+
+    private void DrawGalaxyText(
+    string text,
+    Vector2 position,
+    DebugColor color,
+    float scale = 2.0f)
+    {
+        Runtime.Services.Graphics.Submit(
+            new DrawDebugTextCommand(
+                text,
+                position,
+                color,
+                scale,
+                DebugRenderSpace.Screen));
+    }
+
+    private void DrawGalaxyCircle(
+        Vector2 center,
+        float radius,
+        DebugColor color)
+    {
+        const int segments = 24;
+
+        var graphics = Runtime.Services.Graphics;
+
+        var previous = new Vector2(
+            center.X + radius,
+            center.Y);
+
+        for (var i = 1; i <= segments; i++)
+        {
+            var angle =
+                Math.PI * 2.0 * i / segments;
+
+            var current = new Vector2(
+                center.X + (float)Math.Cos(angle) * radius,
+                center.Y + (float)Math.Sin(angle) * radius);
+
+            graphics.Submit(
+                new DrawDebugLineCommand(
+                    previous,
+                    current,
+                    color,
+                    DebugRenderSpace.Screen));
+
+            previous = current;
+        }
+    }
+
+    private static Vector2 GetGalaxyScreenPosition(
+    GalaxySystem system)
+    {
+        return new Vector2(
+            GalaxyMapCenterX + system.MapX * GalaxyMapScale,
+            GalaxyMapCenterY + system.MapY * GalaxyMapScale);
+    }
+
+    private GalaxySystem? FindGalaxySystemAt(
+    Vector2 mousePosition)
+    {
+        if (_session is null)
+            return null;
+
+        foreach (var system in _session.World.Galaxy.Systems)
+        {
+            var position = GetGalaxyScreenPosition(system);
+
+            var dx = mousePosition.X - position.X;
+            var dy = mousePosition.Y - position.Y;
+
+            if (dx * dx + dy * dy <= 18.0f * 18.0f)
+                return system;
+        }
+
+        return null;
+    }
+
+    private void HandleGalaxyMapInput()
+    {
+        if (_session is null || _pointerInput is null)
+            return;
+
+        if (_pointerInput.IsPressed(InputMouseButton.Left))
+        {
+            var hovered = FindGalaxySystemAt(
+                _pointerInput.Position);
+
+            if (hovered is not null)
+            {
+                _selectedGalaxySystemId = hovered.Id;
+                _galaxyMapMessage = "SYSTEM SELECTED";
+            }
+        }
+
+        if (Runtime.Services.Input.IsPressed(
+                ShipInputActions.GalaxyJump))
+        {
+            TryGalaxyJump();
+        }
+    }
+
+    private PlanetObject? GetHoveredPlanet()
+    {
+        if (_pointerInput is null || _session is null)
+            return null;
+
+        var mouseWorldPosition =
+            Runtime.Services.Camera.ScreenToWorld(
+                _pointerInput.Position);
+
+        var starSystem = _session.World.StarSystem;
+
+        foreach (var obj in starSystem.Objects)
+        {
+            if (obj is not PlanetObject planet)
+                continue;
+
+            var dx = mouseWorldPosition.X - (float)planet.X;
+            var dy = mouseWorldPosition.Y - (float)planet.Y;
+
+            var distanceSquared = dx * dx + dy * dy;
+            var radius = (float)planet.VisualRadius;
+
+            if (distanceSquared <= radius * radius)
+                return planet;
+        }
+
+        return null;
+    }
+
+    private void DrawPlanetTooltip()
+    {
+        if (_hoveredPlanet is null)
+            return;
+
+        var graphics = Runtime.Services.Graphics;
+
+        const float panelWidth = 300.0f;
+        const float panelHeight = 110.0f;
+
+        var panelPosition = new Vector2(24.0f, 80.0f);
+
+        graphics.Submit(
+            new DrawUiRectangleCommand(
+                panelPosition,
+                new Vector2(panelWidth, panelHeight),
+                new UiColor(20, 25, 40, 230)));
+
+        // Текст добавим следующим шагом,
+        // после проверки доступного API шрифтов.
     }
 
     protected override void OnRender(double interpolationAlpha)
@@ -176,7 +606,7 @@ internal sealed class GameMain : EngineGame
 
         // Камера следует за кораблём.
         camera.Position = ship.Position;
-
+        _hoveredPlanet = GetHoveredPlanet();
         // Звёздное поле.
         foreach (var star in _stars)
         {
@@ -467,6 +897,13 @@ internal sealed class GameMain : EngineGame
 
             routeInfo = $"ETA: {daysRemaining} DAY(S)";
         }
+
+        if (_isGalaxyMapOpen)
+        {
+            DrawGalaxyMap();
+        }
+
+        DrawPlanetTooltip();
 
         graphics.Submit(
             new DrawDebugTextCommand(

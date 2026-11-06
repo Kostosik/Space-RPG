@@ -23,6 +23,7 @@ public sealed class PlayerShipMovementSystem :
     IUpdateSystem,
     IDisposable
 {
+    public bool AcceptPointerCommands { get; set; } = true;
     private const double PathEpsilon = 0.000001;
     private IReadOnlyList<NavigationCircleObstacle> _obstacles;
     private static readonly IReadOnlyList<NavigationCircleObstacle>
@@ -107,7 +108,8 @@ public sealed class PlayerShipMovementSystem :
 
     private void TrySetDestination()
     {
-        if (_pointerInput is null ||
+        if (!AcceptPointerCommands ||
+            _pointerInput is null ||
             !_pointerInput.IsPressed(InputMouseButton.Left))
         {
             return;
@@ -159,6 +161,24 @@ public sealed class PlayerShipMovementSystem :
 
         ship.Destination = target;
         ship.HasDestination = true;
+    }
+
+    public void ResetForSystemTransition(
+    Vector2 spawnPosition)
+    {
+        if (!_world.Exists(_shipEntity) ||
+            !_world.Has<PlayerShipComponent>(_shipEntity))
+        {
+            return;
+        }
+
+        ClearPath();
+
+        ref var ship =
+            ref _world.Get<PlayerShipComponent>(_shipEntity);
+
+        ship.Position = spawnPosition;
+        ship.Rotation = 0.0f;
     }
 
     // Вызывается исключительно игровым временем.
