@@ -1,9 +1,11 @@
-using System.Text.Json;
 using Engine.Hosting.Desktop;
+using Engine.Input;
 using Engine.Runtime;
 using Engine.Serialization.Content;
 using Engine.Serialization.UI;
 using Engine.UI.Assets;
+using GameProject.Player;
+using System.Text.Json;
 
 namespace GameProject;
 
@@ -14,6 +16,40 @@ internal static class Program
         var startupScenePath =
             ResolveStartupScenePath(
                 "Space-RPG.vibeproject");
+
+        var inputActions = new InputActionMap();
+
+        inputActions.Bind(
+            ShipInputActions.Thrust,
+            new InputBinding("Keyboard.W"));
+
+        inputActions.Bind(
+            ShipInputActions.Thrust,
+            new InputBinding("Keyboard.Up"));
+
+        inputActions.Bind(
+            ShipInputActions.Reverse,
+            new InputBinding("Keyboard.S"));
+
+        inputActions.Bind(
+            ShipInputActions.Reverse,
+            new InputBinding("Keyboard.Down"));
+
+        inputActions.Bind(
+            ShipInputActions.TurnLeft,
+            new InputBinding("Keyboard.A"));
+
+        inputActions.Bind(
+            ShipInputActions.TurnLeft,
+            new InputBinding("Keyboard.Left"));
+
+        inputActions.Bind(
+            ShipInputActions.TurnRight,
+            new InputBinding("Keyboard.D"));
+
+        inputActions.Bind(
+            ShipInputActions.TurnRight,
+            new InputBinding("Keyboard.Right"));
 
         DesktopGameHost.Run(
         (DesktopGameHostContext context) => new GameMain(
@@ -31,7 +67,8 @@ internal static class Program
                                 asset => asset.Extension.Equals(
                                     ".ui",
                                     StringComparison.OrdinalIgnoreCase)));
-                    }
+                    },
+                    InputActions = inputActions,
                 });
     }
 
