@@ -12,6 +12,7 @@ using Engine.Serialization.SaveLoad.Worlds;
 using GameProject.Game;
 using GameProject.Player;
 using GameProject.Simulation;
+using GameProject.World;
 
 namespace GameProject;
 
@@ -73,7 +74,7 @@ internal sealed class GameMain : EngineGame
             _shipEntity,
             new PlayerShipComponent
             {
-                Position = new Vector2(0.0f, 0.0f),
+                Position = new Vector2(-100.0f, 0.0f),
                 Rotation = 0.0f,
                 MaxSpeed = 300.0f
             });
@@ -93,7 +94,8 @@ internal sealed class GameMain : EngineGame
     protected override void OnInitialize()
     {
         _session = GameSession.CreateNew();
-
+        _shipMovementSystem?.SetNavigationObstacles(
+    _session.World.StarSystem.NavigationObstacles);
         var gameTime = _session.Simulation.Time;
 
         // Игра начинается в режиме ожидания приказов.
@@ -201,6 +203,37 @@ internal sealed class GameMain : EngineGame
                         star.Y + starSize),
                     DebugColor.White,
                     DebugRenderSpace.World));
+        }
+
+        // Объекты текущей звёздной системы.
+        var starSystem = _session?.World.StarSystem;
+
+        if (starSystem is not null)
+        {
+            // Центральная звезда.
+            DrawWorldCircle(
+                starSystem.Star.X,
+                starSystem.Star.Y,
+                starSystem.Star.VisualRadius,
+                new DebugColor(255, 220, 100));
+
+            // Планеты, астероиды и станции.
+            foreach (var obj in starSystem.Objects)
+            {
+                var color = obj switch
+                {
+                    PlanetObject => new DebugColor(100, 180, 255),
+                    AsteroidObject => new DebugColor(160, 160, 160),
+                    StationObject => new DebugColor(100, 255, 150),
+                    _ => DebugColor.White
+                };
+
+                DrawWorldCircle(
+                    obj.X,
+                    obj.Y,
+                    obj.VisualRadius,
+                    color);
+            }
         }
 
         // Геометрия корабля.
@@ -475,5 +508,38 @@ internal sealed class GameMain : EngineGame
         return new Vector2(
             origin.X + direction.X * scale,
             origin.Y + direction.Y * scale);
+    }
+
+    private void DrawWorldCircle(
+    double centerX,
+    double centerY,
+    double radius,
+    DebugColor color)
+    {
+        const int segments = 32;
+
+        var graphics = Runtime.Services.Graphics;
+
+        var previous = new Vector2(
+            (float)(centerX + radius),
+            (float)centerY);
+
+        for (var i = 1; i <= segments; i++)
+        {
+            var angle = Math.PI * 2.0 * i / segments;
+
+            var current = new Vector2(
+                (float)(centerX + Math.Cos(angle) * radius),
+                (float)(centerY + Math.Sin(angle) * radius));
+
+            graphics.Submit(
+                new DrawDebugLineCommand(
+                    previous,
+                    current,
+                    color,
+                    DebugRenderSpace.World));
+
+            previous = current;
+        }
     }
 }

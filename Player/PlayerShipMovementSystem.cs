@@ -24,7 +24,7 @@ public sealed class PlayerShipMovementSystem :
     IDisposable
 {
     private const double PathEpsilon = 0.000001;
-
+    private IReadOnlyList<NavigationCircleObstacle> _obstacles;
     private static readonly IReadOnlyList<NavigationCircleObstacle>
         NoObstacles = Array.Empty<NavigationCircleObstacle>();
 
@@ -35,7 +35,6 @@ public sealed class PlayerShipMovementSystem :
     private readonly Camera2D _camera;
 
     private readonly NavigationPathfinder _pathfinder = new();
-    private readonly IReadOnlyList<NavigationCircleObstacle> _obstacles;
 
     private NavigationPath? _path;
     private int _nextWaypointIndex;
@@ -257,6 +256,13 @@ public sealed class PlayerShipMovementSystem :
         }
         // Корабль достиг конечной точки.
         ClearPath();
+    }
+
+    public void SetNavigationObstacles(
+    IReadOnlyList<NavigationCircleObstacle> obstacles)
+    {
+        ArgumentNullException.ThrowIfNull(obstacles);
+        _obstacles = obstacles;
     }
 
     private void ClearPath()

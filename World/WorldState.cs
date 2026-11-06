@@ -6,6 +6,7 @@
 /// </summary>
 public sealed class WorldState
 {
+    public StarSystem StarSystem { get; }
     private WorldState(
         Guid id,
         int seed)
@@ -19,6 +20,7 @@ public sealed class WorldState
 
         Id = id;
         Seed = seed;
+        StarSystem = StarSystemGenerator.Generate();
     }
 
     public Guid Id { get; }
