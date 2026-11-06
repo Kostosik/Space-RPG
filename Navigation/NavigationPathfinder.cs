@@ -1,5 +1,4 @@
-﻿
-namespace GameProject.Navigation;
+﻿namespace GameProject.Navigation;
 
 public sealed class NavigationPathfinder
 {
@@ -10,8 +9,10 @@ public sealed class NavigationPathfinder
     public NavigationPathfinder(int obstacleResolution = 32)
     {
         if (obstacleResolution < 8)
+        {
             throw new ArgumentOutOfRangeException(
                 nameof(obstacleResolution));
+        }
 
         _obstacleResolution = obstacleResolution;
     }
@@ -24,20 +25,52 @@ public sealed class NavigationPathfinder
         ArgumentNullException.ThrowIfNull(obstacles);
 
         if (!start.IsFinite || !goal.IsFinite)
-            throw new ArgumentException("Coordinates must be finite.");
-
-        if (NavigationVector2.Distance(start, goal) <= Epsilon)
-            return new NavigationPath(new[] { start, goal });
+        {
+            throw new ArgumentException(
+                "Coordinates must be finite.");
+        }
 
         foreach (var obstacle in obstacles)
         {
-            if (IsInside(start, obstacle) || IsInside(goal, obstacle))
+            if (obstacle is null)
+            {
+                throw new ArgumentException(
+                    "Obstacle list cannot contain null values.",
+                    nameof(obstacles));
+            }
+
+            // Сначала проверяем, не находится ли начало
+            // или конец маршрута внутри препятствия.
+            if (IsInside(start, obstacle) ||
+                IsInside(goal, obstacle))
+            {
                 return null;
+            }
         }
 
-        // Первым делом проверяем прямой маршрут.
+        var directDistance =
+            NavigationVector2.Distance(start, goal);
+
+        if (!double.IsFinite(directDistance))
+        {
+            throw new ArgumentException(
+                "Distance between points must be finite.");
+        }
+
+        // Только после проверки препятствий
+        // обрабатываем практически совпадающие точки.
+        if (directDistance <= Epsilon)
+        {
+            return new NavigationPath(
+                new[] { start, goal });
+        }
+
+        // Сначала проверяем прямой маршрут.
         if (IsVisible(start, goal, obstacles))
-            return new NavigationPath(new[] { start, goal });
+        {
+            return new NavigationPath(
+                new[] { start, goal });
+        }
 
         var nodes = new List<NavigationVector2>
         {
@@ -45,7 +78,7 @@ public sealed class NavigationPathfinder
             goal
         };
 
-        // Строим описанные многоугольники вокруг окружностей.
+        // Создаём описанные многоугольники вокруг окружностей.
         foreach (var obstacle in obstacles)
         {
             var vertexRadius =
@@ -57,23 +90,31 @@ public sealed class NavigationPathfinder
                 var angle =
                     2.0 * Math.PI * i / _obstacleResolution;
 
-                nodes.Add(new NavigationVector2(
-                    obstacle.Center.X + Math.Cos(angle) * vertexRadius,
-                    obstacle.Center.Y + Math.Sin(angle) * vertexRadius));
+                nodes.Add(
+                    new NavigationVector2(
+                        obstacle.Center.X +
+                        Math.Cos(angle) * vertexRadius,
+
+                        obstacle.Center.Y +
+                        Math.Sin(angle) * vertexRadius));
             }
         }
 
         var count = nodes.Count;
+
         var distances = new double[count];
         var previous = new int[count];
         var visited = new bool[count];
 
-        Array.Fill(distances, double.PositiveInfinity);
+        Array.Fill(
+            distances,
+            double.PositiveInfinity);
+
         Array.Fill(previous, -1);
 
-        distances[0] = 0;
+        distances[0] = 0.0;
 
-        // Дейкстра на графе видимости.
+        // Алгоритм Дейкстры на графе видимости.
         for (var iteration = 0; iteration < count; iteration++)
         {
             var current = -1;
@@ -81,7 +122,8 @@ public sealed class NavigationPathfinder
 
             for (var i = 0; i < count; i++)
             {
-                if (!visited[i] && distances[i] < bestDistance)
+                if (!visited[i] &&
+                    distances[i] < bestDistance)
                 {
                     current = i;
                     bestDistance = distances[i];
@@ -91,6 +133,7 @@ public sealed class NavigationPathfinder
             if (current < 0)
                 break;
 
+            // Конечная точка достигнута.
             if (current == 1)
                 break;
 
@@ -101,13 +144,21 @@ public sealed class NavigationPathfinder
                 if (visited[next] || next == current)
                     continue;
 
-                if (!IsVisible(nodes[current], nodes[next], obstacles))
+                if (!IsVisible(
+                        nodes[current],
+                        nodes[next],
+                        obstacles))
+                {
                     continue;
+                }
+
+                var edgeLength =
+                    NavigationVector2.Distance(
+                        nodes[current],
+                        nodes[next]);
 
                 var candidate =
-                    distances[current] +
-                    NavigationVector2.Distance(
-                        nodes[current], nodes[next]);
+                    distances[current] + edgeLength;
 
                 if (candidate < distances[next])
                 {
@@ -120,10 +171,12 @@ public sealed class NavigationPathfinder
         if (!double.IsFinite(distances[1]))
             return null;
 
+        // Восстанавливаем маршрут от цели к началу.
         var result = new List<NavigationVector2>();
+
         var index = 1;
 
-        while (index >= 0)
+        while (true)
         {
             result.Add(nodes[index]);
 
@@ -131,27 +184,27 @@ public sealed class NavigationPathfinder
                 break;
 
             index = previous[index];
-        }
 
-        if (result[^1] != start)
-            return null;
+            if (index < 0 || result.Count > count)
+                return null;
+        }
 
         result.Reverse();
 
-        return new NavigationPath(RemoveCollinearPoints(result));
+        return new NavigationPath(
+            RemoveCollinearPoints(result));
     }
 
     private static bool IsInside(
         NavigationVector2 point,
         NavigationCircleObstacle obstacle)
     {
-        var distanceSquared =
-            (point - obstacle.Center).LengthSquared;
+        var distance =
+            NavigationVector2.Distance(
+                point,
+                obstacle.Center);
 
-        var radiusSquared =
-            obstacle.Radius * obstacle.Radius;
-
-        return distanceSquared < radiusSquared - Epsilon;
+        return distance < obstacle.Radius - Epsilon;
     }
 
     private static bool IsVisible(
@@ -162,8 +215,12 @@ public sealed class NavigationPathfinder
         foreach (var obstacle in obstacles)
         {
             if (SegmentIntersectsCircleInterior(
-                    start, end, obstacle))
+                    start,
+                    end,
+                    obstacle))
+            {
                 return false;
+            }
         }
 
         return true;
@@ -177,29 +234,31 @@ public sealed class NavigationPathfinder
         var segment = end - start;
         var lengthSquared = segment.LengthSquared;
 
-        if (lengthSquared <= Epsilon)
+        if (lengthSquared <= Epsilon * Epsilon)
             return IsInside(start, obstacle);
 
         var toCenter = obstacle.Center - start;
 
         var t = NavigationVector2.Dot(
-            toCenter, segment) / lengthSquared;
+            toCenter,
+            segment) / lengthSquared;
 
         t = Math.Clamp(t, 0.0, 1.0);
 
-        var closestPoint = start + segment * t;
+        var closestPoint =
+            start + segment * t;
 
-        var distanceSquared =
-            (closestPoint - obstacle.Center).LengthSquared;
+        var distance =
+            NavigationVector2.Distance(
+                closestPoint,
+                obstacle.Center);
 
-        var radiusSquared =
-            obstacle.Radius * obstacle.Radius;
-
-        return distanceSquared < radiusSquared - Epsilon;
+        return distance < obstacle.Radius - Epsilon;
     }
 
-    private static IEnumerable<NavigationVector2> RemoveCollinearPoints(
-        IReadOnlyList<NavigationVector2> points)
+    private static IEnumerable<NavigationVector2>
+        RemoveCollinearPoints(
+            IReadOnlyList<NavigationVector2> points)
     {
         if (points.Count <= 2)
             return points;
@@ -218,10 +277,14 @@ public sealed class NavigationPathfinder
             var ab = b - a;
             var bc = c - b;
 
-            var cross = ab.X * bc.Y - ab.Y * bc.X;
+            var cross =
+                ab.X * bc.Y -
+                ab.Y * bc.X;
 
             if (Math.Abs(cross) > Epsilon)
+            {
                 result.Add(b);
+            }
         }
 
         result.Add(points[^1]);

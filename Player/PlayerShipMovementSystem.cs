@@ -74,8 +74,9 @@ public sealed class PlayerShipMovementSystem :
         _input = input;
         _pointerInput = pointerInput;
         _camera = camera;
-
-        _obstacles = obstacles ?? NoObstacles;
+        _obstacles = obstacles is null
+            ? NoObstacles
+            : Array.AsReadOnly(obstacles.ToArray());
     }
 
     public NavigationPath? CurrentPath => _path;
@@ -85,6 +86,12 @@ public sealed class PlayerShipMovementSystem :
     public void AttachGameTime(GameTime gameTime)
     {
         ArgumentNullException.ThrowIfNull(gameTime);
+
+        if (_disposed)
+        {
+            throw new ObjectDisposedException(
+                nameof(PlayerShipMovementSystem));
+        }
 
         if (_gameTime is not null)
         {
@@ -115,10 +122,40 @@ public sealed class PlayerShipMovementSystem :
     }
 
     public void SetLandingObjects(
-    IReadOnlyList<StarSystemObject> objects)
+        IReadOnlyList<StarSystemObject> objects)
     {
         ArgumentNullException.ThrowIfNull(objects);
-        _landingObjects = objects;
+
+        if (objects.Any(obj => obj is null))
+        {
+            throw new ArgumentException(
+                "Landing objects cannot contain null values.",
+                nameof(objects));
+        }
+
+        _landingObjects =
+            Array.AsReadOnly(objects.ToArray());
+
+        ClearPath();
+    }
+
+    public void SetNavigationObstacles(
+        IReadOnlyList<NavigationCircleObstacle> obstacles)
+    {
+        ArgumentNullException.ThrowIfNull(obstacles);
+
+        if (obstacles.Any(obstacle => obstacle is null))
+        {
+            throw new ArgumentException(
+                "Navigation obstacles cannot contain null values.",
+                nameof(obstacles));
+        }
+
+        // Старый маршрут больше не гарантирует безопасность.
+        ClearPath();
+
+        _obstacles =
+            Array.AsReadOnly(obstacles.ToArray());
     }
 
     private void TrySetDestination()
@@ -130,7 +167,6 @@ public sealed class PlayerShipMovementSystem :
             return;
         }
 
-        // Новый маршрут задаём только на паузе.
         if (_gameTime is not null && !_gameTime.IsPaused)
             return;
 
@@ -139,8 +175,6 @@ public sealed class PlayerShipMovementSystem :
         {
             return;
         }
-
-        ClearPath();
 
         ref var ship =
             ref _world.Get<PlayerShipComponent>(_shipEntity);
@@ -154,12 +188,8 @@ public sealed class PlayerShipMovementSystem :
             return;
         }
 
-        // Проверяем, не кликнул ли игрок по планете
-        // или космической станции.
         var landingTarget = FindLandingTarget(target);
 
-        // Если это объект для посадки, направляем корабль
-        // к точке рядом с его поверхностью.
         if (landingTarget is not null)
         {
             target = GetLandingApproachPoint(
@@ -175,22 +205,33 @@ public sealed class PlayerShipMovementSystem :
             target.X,
             target.Y);
 
+        // Сначала строим новый маршрут.
+        // Старый пока остаётся нетронутым.
         var path = _pathfinder.FindPath(
             start,
             goal,
             _obstacles);
 
+        // Если новый маршрут невозможен,
+        // оставляем текущий маршрут без изменений.
         if (path is null)
             return;
 
-        // Если корабль уже находится в точке посадки.
+        // Корабль уже находится в точке назначения.
         if (path.Length <= PathEpsilon)
         {
+            ClearPath();
+
             if (landingTarget is not null)
+            {
                 LandingCompleted?.Invoke(landingTarget);
+            }
 
             return;
         }
+
+        // Только после успешного построения заменяем маршрут.
+        ClearPath();
 
         _path = path;
         _nextWaypointIndex = 1;
@@ -388,13 +429,6 @@ public sealed class PlayerShipMovementSystem :
         {
             LandingCompleted?.Invoke(completedLanding);
         }
-    }
-
-    public void SetNavigationObstacles(
-    IReadOnlyList<NavigationCircleObstacle> obstacles)
-    {
-        ArgumentNullException.ThrowIfNull(obstacles);
-        _obstacles = obstacles;
     }
 
     private void ClearPath()
