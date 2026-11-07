@@ -56,7 +56,7 @@ public sealed class PlayerShipMovementSystem :
 
     private GameTime? _gameTime;
     private bool _disposed;
-
+    private bool _ignoreCurrentLeftPress;
     public PlayerShipMovementSystem(
         Engine.ECS.World world,
         EntityId shipEntity,
@@ -139,6 +139,22 @@ public sealed class PlayerShipMovementSystem :
         ClearPath();
     }
 
+    public void EnablePointerCommandsAfterCurrentPress()
+    {
+        if (_disposed)
+        {
+            throw new ObjectDisposedException(
+                nameof(PlayerShipMovementSystem));
+        }
+
+        // Не позволяем клику по кнопке меню
+        // стать командой движения корабля.
+        _ignoreCurrentLeftPress =
+            _pointerInput?.IsDown(InputMouseButton.Left) == true;
+
+        AcceptPointerCommands = true;
+    }
+
     public void SetNavigationObstacles(
         IReadOnlyList<NavigationCircleObstacle> obstacles)
     {
@@ -160,6 +176,17 @@ public sealed class PlayerShipMovementSystem :
 
     private void TrySetDestination()
     {
+        if (_ignoreCurrentLeftPress)
+        {
+            // Пока кнопка мыши удерживается — игнорируем её.
+            if (_pointerInput?.IsDown(InputMouseButton.Left) == true)
+            {
+                return;
+            }
+
+            // Кнопку отпустили. Следующее нажатие уже можно обработать.
+            _ignoreCurrentLeftPress = false;
+        }
         if (!AcceptPointerCommands ||
             _pointerInput is null ||
             !_pointerInput.IsPressed(InputMouseButton.Left))

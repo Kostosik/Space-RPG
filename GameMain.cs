@@ -8,9 +8,11 @@ using Engine.Graphics.DebugGraphics;
 using Engine.Input;
 using Engine.Networking.Replication;
 using Engine.Runtime;
+using Engine.Runtime.Scenes;
 using Engine.Serialization.SaveLoad.Ecs;
 using Engine.Serialization.SaveLoad.Worlds;
 using GameProject.Game;
+using GameProject.Game.Scenes;
 using GameProject.Player;
 using GameProject.Ships;
 using GameProject.Simulation;
@@ -21,7 +23,7 @@ namespace GameProject;
 internal sealed class GameMain : EngineGame
 {
     private bool _isGalaxyMapOpen;
-
+    private SceneManager<GameSceneContext>? _sceneManager;
     private string _selectedGalaxySystemId = "sol";
     private static readonly AssetPath StarterShipAssetPath =
     new("Definitions/Ships/starter_scout.json");
@@ -99,7 +101,11 @@ internal sealed class GameMain : EngineGame
                 "Starter ship definition was not loaded.");
 
         _starterShipStats = new ShipStatsCalculator()
-            .Calculate(shipDefinition);
+            .Calculate(
+                shipDefinition,
+                new PlayerShipState(shipDefinition.Id),
+                new Dictionary<string, EquipmentDefinition>(
+                    StringComparer.Ordinal));
 
         if (!float.IsFinite(_starterShipStats.MaxSpeed) ||
             _starterShipStats.MaxSpeed <= 0.0f ||
@@ -170,7 +176,7 @@ internal sealed class GameMain : EngineGame
 
         // Один игровой день визуально проходит за 6 секунд.
         gameTime.SetDayDuration(
-            TimeSpan.FromSeconds(6));
+            TimeSpan.FromSeconds(4));
         // Подключаем орбиты планет к игровому времени.
         gameTime.Advanced += OnGameTimeAdvanced;
         // Подключаем движение корабля к игровому времени.
@@ -209,6 +215,39 @@ internal sealed class GameMain : EngineGame
 
         Console.WriteLine(
             $"Player ship created: {_shipEntity}");
+
+        // Запрещаем управление кораблём в главном меню.
+        if (_shipMovementSystem is not null)
+        {
+            _shipMovementSystem.AcceptPointerCommands = false;
+        }
+
+        // Создаём контекст сцен.
+        var sceneContext = new GameSceneContext(
+            Runtime,
+            _pointerInput,
+
+            // Вход в игровой процесс.
+            enterGameplay: () =>
+            {
+                _shipMovementSystem?.EnablePointerCommandsAfterCurrentPress();
+            },
+
+            updateGameplay: UpdateGameplay,
+
+            renderGameplay: RenderGameplay,
+
+            drawLandingScreen: DrawPlanetScreen,
+
+            takeOffFromPlanet: TakeOffFromPlanet
+        );
+
+        // Создаём менеджер сцен.
+        _sceneManager =
+            new SceneManager<GameSceneContext>(sceneContext);
+
+        // Запускаем главное меню.
+        _sceneManager.Start(new MainMenuScene());
     }
 
     private void OnGameTimeAdvanced(GameTimeAdvanced advanced)
@@ -225,19 +264,18 @@ internal sealed class GameMain : EngineGame
 
     protected override void OnUpdate(TimeSnapshot time)
     {
+        _sceneManager?.Update(time);
+    }
+
+    private void UpdateGameplay(TimeSnapshot time)
+    {
         if (_session is null)
             return;
-        if (_isLanded)
-        {
-            HandlePlanetScreenInput();
-            return;
-        }
+
         if (Runtime.Services.Input.IsPressed(
-        ShipInputActions.ToggleGalaxyMap))
+                ShipInputActions.ToggleGalaxyMap))
         {
             _isGalaxyMapOpen = !_isGalaxyMapOpen;
-
-            _shipMovementSystem?.GetType();
 
             if (_isGalaxyMapOpen)
             {
@@ -342,15 +380,18 @@ internal sealed class GameMain : EngineGame
     StarSystemObject landingObject)
     {
         _landedObject = landingObject;
-        _isLanded = true;
 
         if (_shipMovementSystem is not null)
         {
             _shipMovementSystem.AcceptPointerCommands = false;
         }
 
-        // Останавливаем игровое время после посадки.
+        // Останавливаем игровое время.
         _session?.Simulation.Time.Pause();
+
+        // Переключаемся на экран планеты.
+        _sceneManager?.RequestScene(
+            new PlanetLandingScene());
     }
 
     private void HandlePlanetScreenInput()
@@ -375,13 +416,7 @@ internal sealed class GameMain : EngineGame
 
     private void TakeOffFromPlanet()
     {
-        _isLanded = false;
         _landedObject = null;
-
-        if (_shipMovementSystem is not null)
-        {
-            _shipMovementSystem.AcceptPointerCommands = true;
-        }
 
         // Время оставляем на паузе.
         // Игрок сам решит, когда продолжить ход.
@@ -706,7 +741,7 @@ internal sealed class GameMain : EngineGame
         // после проверки доступного API шрифтов.
     }
 
-    protected override void OnRender(double interpolationAlpha)
+    private void RenderGameplay(double interpolationAlpha)
     {
         var ecs = Runtime.EcsWorld;
 
@@ -1029,10 +1064,7 @@ internal sealed class GameMain : EngineGame
         {
             DrawGalaxyMap();
         }
-        if (_isLanded)
-        {
-            DrawPlanetScreen();
-        }
+
         DrawPlanetTooltip();
 
         graphics.Submit(
@@ -1043,6 +1075,11 @@ internal sealed class GameMain : EngineGame
                 DebugColor.White,
                 2.0f,
                 DebugRenderSpace.Screen));
+    }
+
+    protected override void OnRender(double interpolationAlpha)
+    {
+        _sceneManager?.Render(interpolationAlpha);
     }
 
     private void DrawPlanetScreen()
@@ -1180,6 +1217,8 @@ internal sealed class GameMain : EngineGame
 
             _starterShipDefinition = null;
         }
+        _sceneManager?.Dispose();
+        _sceneManager = null;
     }
 
     private static Vector2 AddScaled(
