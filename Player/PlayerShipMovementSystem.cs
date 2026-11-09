@@ -33,6 +33,12 @@ public sealed class PlayerShipMovementSystem :
 
     public bool AcceptPointerCommands { get; set; } = true;
     private const double PathEpsilon = 0.000001;
+    private const double LandingApproachClearance = 28.0;
+    private const double LandingRouteRefreshDistance = 8.0;
+    private const double LandingArrivalTolerance = 3.0;
+
+    private Vector2 _lastLandingTargetPosition;
+    private bool _hasLastLandingTargetPosition;
     // Предпочтительный радиус поворота корабля.
     private const double ShipTurnRadius = 40.0;
 
@@ -308,6 +314,15 @@ public sealed class PlayerShipMovementSystem :
 
         _pendingLandingTarget = landingTarget;
 
+        if (landingTarget is PlanetObject planet)
+        {
+            _lastLandingTargetPosition = new Vector2(
+                (float)planet.X,
+                (float)planet.Y);
+
+            _hasLastLandingTargetPosition = true;
+        }
+
         ship.Destination = target;
         ship.HasDestination = true;
     }
@@ -351,8 +366,8 @@ public sealed class PlayerShipMovementSystem :
     }
 
     private static Vector2 GetLandingApproachPoint(
-        StarSystemObject target,
-        Vector2 shipPosition)
+    StarSystemObject target,
+    Vector2 shipPosition)
     {
         var dx = shipPosition.X - target.X;
         var dy = shipPosition.Y - target.Y;
@@ -368,14 +383,119 @@ public sealed class PlayerShipMovementSystem :
             distance = 1.0;
         }
 
-        const double shipClearance = 28.0;
-
         var approachDistance =
-            target.VisualRadius + shipClearance;
+            target.VisualRadius + LandingApproachClearance;
 
         return new Vector2(
             (float)(target.X + dx / distance * approachDistance),
             (float)(target.Y + dy / distance * approachDistance));
+    }
+
+    private static bool IsWithinLandingRange(
+        Vector2 shipPosition,
+        StarSystemObject target)
+    {
+        var dx = shipPosition.X - target.X;
+        var dy = shipPosition.Y - target.Y;
+
+        var distanceSquared =
+            (double)dx * dx + (double)dy * dy;
+
+        var landingRadius =
+            target.VisualRadius +
+            LandingApproachClearance +
+            LandingArrivalTolerance;
+
+        return distanceSquared <= landingRadius * landingRadius;
+    }
+
+    private void TryRefreshMovingLandingTarget(
+        ref PlayerShipComponent ship)
+    {
+        if (_pendingLandingTarget is not PlanetObject planet)
+            return;
+
+        var currentPlanetPosition = new Vector2(
+            (float)planet.X,
+            (float)planet.Y);
+
+        if (!_hasLastLandingTargetPosition)
+        {
+            _lastLandingTargetPosition = currentPlanetPosition;
+            _hasLastLandingTargetPosition = true;
+            return;
+        }
+
+        var dx =
+            currentPlanetPosition.X - _lastLandingTargetPosition.X;
+
+        var dy =
+            currentPlanetPosition.Y - _lastLandingTargetPosition.Y;
+
+        var movementSquared =
+            (double)dx * dx + (double)dy * dy;
+
+        var refreshDistanceSquared =
+            LandingRouteRefreshDistance *
+            LandingRouteRefreshDistance;
+
+        if (_path is not null &&
+            movementSquared < refreshDistanceSquared)
+        {
+            return;
+        }
+
+        // Запоминаем положение, чтобы не запускать
+        // Pathfinder на каждом кадре при неудачном поиске.
+        _lastLandingTargetPosition = currentPlanetPosition;
+
+        // Планета сама подошла достаточно близко к кораблю.
+        if (IsWithinLandingRange(ship.Position, planet))
+        {
+            ClearPath();
+            LandingCompleted?.Invoke(planet);
+            return;
+        }
+
+        var approachPoint = GetLandingApproachPoint(
+            planet,
+            ship.Position);
+
+        var start = new NavigationVector2(
+            ship.Position.X,
+            ship.Position.Y);
+
+        var goal = new NavigationVector2(
+            approachPoint.X,
+            approachPoint.Y);
+
+        var newPath = _pathfinder.FindPath(
+            start,
+            goal,
+            _obstacles);
+
+        // Не заменяем рабочий маршрут, если новый построить нельзя.
+        if (newPath is null)
+            return;
+
+        if (newPath.Length <= PathEpsilon)
+        {
+            if (IsWithinLandingRange(ship.Position, planet))
+            {
+                ClearPath();
+                LandingCompleted?.Invoke(planet);
+            }
+
+            return;
+        }
+
+        // Перестраиваем маршрут от фактической позиции корабля.
+        _path = newPath;
+        _nextWaypointIndex = 1;
+        _distanceTravelled = 0.0;
+
+        ship.Destination = approachPoint;
+        ship.HasDestination = true;
     }
 
     public void ResetForSystemTransition(
@@ -428,7 +548,13 @@ public sealed class PlayerShipMovementSystem :
         {
             return;
         }
+        TryRefreshMovingLandingTarget(ref ship);
 
+        if (_path is null &&
+            _pendingLandingTarget is not PlanetObject)
+        {
+            return;
+        }
         // Постоянная скорость вдоль реальной траектории.
         var remainingDistance =
             (double)ship.MaxSpeed * dayFraction;
@@ -491,14 +617,25 @@ public sealed class PlayerShipMovementSystem :
         // Конечная точка достигнута.
         if (_nextWaypointIndex >= points.Count)
         {
+            // Корабль достиг конечной точки маршрута.
             var completedLanding = _pendingLandingTarget;
 
-            ClearPath();
-
-            if (completedLanding is not null)
+            if (completedLanding is null)
             {
+                ClearPath();
+                return;
+            }
+
+            // Проверяем положение планеты именно сейчас,
+            // а не в момент построения старого маршрута.
+            if (IsWithinLandingRange(ship.Position, completedLanding))
+            {
+                ClearPath();
                 LandingCompleted?.Invoke(completedLanding);
             }
+
+            // Если планета ушла дальше допустимой дистанции,
+            // сохраняем приказ. Следующее обновление перестроит маршрут.
         }
     }
 
@@ -548,6 +685,8 @@ public sealed class PlayerShipMovementSystem :
 
             ship.HasDestination = false;
         }
+        _hasLastLandingTargetPosition = false;
+        _lastLandingTargetPosition = default;
     }
 
     public void Dispose()

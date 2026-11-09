@@ -1,5 +1,4 @@
-﻿
-using GameProject.Navigation;
+﻿using GameProject.Navigation;
 
 namespace GameProject.World;
 
@@ -22,7 +21,7 @@ public sealed class StarSystem
         Star = star;
         Objects = Array.AsReadOnly(objects.ToArray());
 
-        // Единственное препятствие для навигации — звезда.
+        // Единственное навигационное препятствие — центральная звезда.
         NavigationObstacles = Array.AsReadOnly(
             new[]
             {
@@ -35,17 +34,15 @@ public sealed class StarSystem
     public void AdvanceOrbit(double elapsedGameDays)
     {
         if (!double.IsFinite(elapsedGameDays) ||
-            elapsedGameDays <= 0.0)
+            elapsedGameDays <= 0)
         {
             return;
         }
 
-        // Орбиты планет не влияют на навигационные препятствия.
-        foreach (var obj in Objects)
+        // Планеты продолжают двигаться по орбитам.
+        // Они не являются навигационными препятствиями.
+        foreach (var planet in Objects.OfType<PlanetObject>())
         {
-            if (obj is not PlanetObject planet)
-                continue;
-
             planet.AdvanceOrbit(
                 elapsedGameDays,
                 Star.X,
