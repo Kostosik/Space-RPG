@@ -34,6 +34,7 @@ internal sealed class GameMain : EngineGame
         "SELECT A STAR SYSTEM";
     private bool _isLanded;
     private StarSystemObject? _landedObject;
+    private StarSystemObject? _pendingLandingTransition;
     private const float GalaxyMapCenterX = 600.0f;
     private const float GalaxyMapCenterY = 360.0f;
     private const float GalaxyMapScale = 0.65f;
@@ -161,10 +162,30 @@ internal sealed class GameMain : EngineGame
         }
 
         _shipMovementSystem?.SetNavigationObstacles(
-    _session.World.StarSystem.NavigationObstacles);
+            _session.World.StarSystem.NavigationObstacles);
         var gameTime = _session.Simulation.Time;
+
+        // Посадка завершена, но переход выполняем
+        // только после окончания текущего игрового дня.
+        if (_pendingLandingTransition is not null &&
+            gameTime.IsPaused)
+        {
+            _landedObject = _pendingLandingTransition;
+            _pendingLandingTransition = null;
+
+            if (_shipMovementSystem is not null)
+            {
+                _shipMovementSystem.AcceptPointerCommands = false;
+            }
+
+            _sceneManager?.RequestScene(
+                new PlanetLandingScene());
+
+            return;
+        }
+
         _shipMovementSystem?.SetLandingObjects(
-    _session.World.StarSystem.Objects);
+            _session.World.StarSystem.Objects);
 
         if (_shipMovementSystem is not null)
         {
@@ -395,21 +416,13 @@ internal sealed class GameMain : EngineGame
     }
 
     private void OnLandingCompleted(
-    StarSystemObject landingObject)
+        StarSystemObject landingObject)
     {
-        _landedObject = landingObject;
+        _pendingLandingTransition = landingObject;
 
-        if (_shipMovementSystem is not null)
-        {
-            _shipMovementSystem.AcceptPointerCommands = false;
-        }
-
-        // Останавливаем игровое время.
-        _session?.Simulation.Time.Pause();
-
-        // Переключаемся на экран планеты.
-        _sceneManager?.RequestScene(
-            new PlanetLandingScene());
+        // Не обрываем игровой день.
+        // Просим TurnExecutionController остановиться на его границе.
+        _turnExecution?.RequestStopAtEndOfDay();
     }
 
     private void HandlePlanetScreenInput()
@@ -436,7 +449,9 @@ internal sealed class GameMain : EngineGame
     {
         _landedObject = null;
 
-        // Время оставляем на паузе.
+        _shipMovementSystem?.ResetLandingState();
+
+        // Время остаётся на паузе.
         // Игрок сам решит, когда продолжить ход.
     }
 
@@ -845,7 +860,8 @@ internal sealed class GameMain : EngineGame
                     color);
             }
         }
-
+        var shipVisualScale =
+            _shipMovementSystem?.LandingVisualScale ?? 1.0f;
         // Геометрия корабля.
         var direction = new Vector2(
             MathF.Cos(ship.Rotation),
@@ -858,17 +874,23 @@ internal sealed class GameMain : EngineGame
         var nose = AddScaled(
             ship.Position,
             direction,
-            22.0f);
+            22.0f * shipVisualScale);
 
         var rearLeft = AddScaled(
-            AddScaled(ship.Position, direction, -14.0f),
+            AddScaled(
+                ship.Position,
+                direction,
+                -14.0f * shipVisualScale),
             perpendicular,
-            12.0f);
+            12.0f * shipVisualScale);
 
         var rearRight = AddScaled(
-            AddScaled(ship.Position, direction, -14.0f),
+            AddScaled(
+                ship.Position,
+                direction,
+                -14.0f * shipVisualScale),
             perpendicular,
-            -12.0f);
+            -12.0f * shipVisualScale);
 
         var graphics = Runtime.Services.Graphics;
 

@@ -39,6 +39,15 @@ public sealed class PlayerShipMovementSystem :
 
     private Vector2 _lastLandingTargetPosition;
     private bool _hasLastLandingTargetPosition;
+
+    private const double LandingAnimationDurationDays = 0.25;
+
+    private bool _isLandingAnimating;
+    private bool _landingAnimationCompleted;
+    private StarSystemObject? _landingAnimationTarget;
+    private Vector2 _landingAnimationStartPosition;
+    private double _landingAnimationElapsedDays;
+
     // Предпочтительный радиус поворота корабля.
     private const double ShipTurnRadius = 40.0;
 
@@ -61,7 +70,27 @@ public sealed class PlayerShipMovementSystem :
 
     private double _distanceTravelled;
 
-    public bool HasActiveRoute => _path is not null;
+    public bool HasActiveRoute =>
+        _path is not null || _isLandingAnimating;
+
+    public bool IsLandingAnimating => _isLandingAnimating;
+
+    public float LandingVisualScale
+    {
+        get
+        {
+            if (!_isLandingAnimating)
+                return 1.0f;
+
+            var progress = Math.Clamp(
+                _landingAnimationElapsedDays /
+                LandingAnimationDurationDays,
+                0.0,
+                1.0);
+
+            return (float)(1.0 - progress);
+        }
+    }
 
     public double DistanceTravelled => _distanceTravelled;
 
@@ -295,11 +324,13 @@ public sealed class PlayerShipMovementSystem :
         // Корабль уже находится в точке назначения.
         if (path.Length <= PathEpsilon)
         {
-            ClearPath();
-
             if (landingTarget is not null)
             {
-                LandingCompleted?.Invoke(landingTarget);
+                BeginLandingAnimation(landingTarget, ref ship);
+            }
+            else
+            {
+                ClearPath();
             }
 
             return;
@@ -391,6 +422,84 @@ public sealed class PlayerShipMovementSystem :
             (float)(target.Y + dy / distance * approachDistance));
     }
 
+    private void BeginLandingAnimation(
+    StarSystemObject target,
+    ref PlayerShipComponent ship)
+    {
+        ClearPath();
+
+        _isLandingAnimating = true;
+        _landingAnimationCompleted = false;
+        _landingAnimationTarget = target;
+        _landingAnimationStartPosition = ship.Position;
+        _landingAnimationElapsedDays = 0.0;
+
+        ship.HasDestination = false;
+
+        // Во время посадки новые команды недоступны.
+        AcceptPointerCommands = false;
+    }
+
+    private void AdvanceLandingAnimation(
+        double elapsedGameDays,
+        ref PlayerShipComponent ship)
+    {
+        if (!_isLandingAnimating ||
+            _landingAnimationCompleted ||
+            _landingAnimationTarget is null)
+        {
+            return;
+        }
+
+        _landingAnimationElapsedDays += elapsedGameDays;
+
+        var progress = Math.Clamp(
+            _landingAnimationElapsedDays /
+            LandingAnimationDurationDays,
+            0.0,
+            1.0);
+
+        // Плавное замедление при приближении к поверхности.
+        var easedProgress =
+            progress * progress * (3.0 - 2.0 * progress);
+
+        var targetPosition = new Vector2(
+            (float)_landingAnimationTarget.X,
+            (float)_landingAnimationTarget.Y);
+
+        ship.Position = new Vector2(
+            _landingAnimationStartPosition.X +
+            (targetPosition.X - _landingAnimationStartPosition.X) *
+            (float)easedProgress,
+
+            _landingAnimationStartPosition.Y +
+            (targetPosition.Y - _landingAnimationStartPosition.Y) *
+            (float)easedProgress);
+
+        var direction = targetPosition - ship.Position;
+
+        if (direction.LengthSquared() > 0.000001f)
+        {
+            ship.Rotation = MathF.Atan2(
+                direction.Y,
+                direction.X);
+        }
+
+        if (progress < 1.0)
+            return;
+
+        ship.Position = targetPosition;
+        _landingAnimationCompleted = true;
+
+        // Событие вызывается только после завершения анимации.
+        LandingCompleted?.Invoke(_landingAnimationTarget);
+    }
+
+    public void ResetLandingState()
+    {
+        ClearPath();
+    }
+
     private static bool IsWithinLandingRange(
         Vector2 shipPosition,
         StarSystemObject target)
@@ -452,8 +561,7 @@ public sealed class PlayerShipMovementSystem :
         // Планета сама подошла достаточно близко к кораблю.
         if (IsWithinLandingRange(ship.Position, planet))
         {
-            ClearPath();
-            LandingCompleted?.Invoke(planet);
+            BeginLandingAnimation(planet, ref ship);
             return;
         }
 
@@ -482,8 +590,7 @@ public sealed class PlayerShipMovementSystem :
         {
             if (IsWithinLandingRange(ship.Position, planet))
             {
-                ClearPath();
-                LandingCompleted?.Invoke(planet);
+                BeginLandingAnimation(planet, ref ship);
             }
 
             return;
@@ -520,10 +627,12 @@ public sealed class PlayerShipMovementSystem :
 
 
     private void OnGameTimeAdvanced(
-        GameTimeAdvanced advanced)
+    GameTimeAdvanced advanced)
     {
         if (_disposed ||
-            _path is null ||
+            (!_isLandingAnimating &&
+             _path is null &&
+             _pendingLandingTarget is not PlanetObject) ||
             !_world.Exists(_shipEntity) ||
             !_world.Has<PlayerShipComponent>(_shipEntity))
         {
@@ -543,19 +652,29 @@ public sealed class PlayerShipMovementSystem :
         ref var ship =
             ref _world.Get<PlayerShipComponent>(_shipEntity);
 
+        // Во время посадки корабль уже не выполняет маршрут.
+        if (_isLandingAnimating)
+        {
+            AdvanceLandingAnimation(dayFraction, ref ship);
+            return;
+        }
+
         if (!float.IsFinite(ship.MaxSpeed) ||
             ship.MaxSpeed <= 0.0f)
         {
             return;
         }
+
         TryRefreshMovingLandingTarget(ref ship);
 
-        if (_path is null &&
-            _pendingLandingTarget is not PlanetObject)
-        {
+        // Если только что началась посадка,
+        // анимация продолжится со следующего обновления времени.
+        if (_isLandingAnimating)
             return;
-        }
-        // Постоянная скорость вдоль реальной траектории.
+
+        if (_path is null)
+            return;
+
         var remainingDistance =
             (double)ship.MaxSpeed * dayFraction;
 
@@ -584,12 +703,9 @@ public sealed class PlayerShipMovementSystem :
                 continue;
             }
 
-            // Направление траектории.
             var directionX = dx / (float)distance;
             var directionY = dy / (float)distance;
 
-            // Нос корабля всегда совпадает
-            // с направлением его движения.
             ship.Rotation = MathF.Atan2(
                 directionY,
                 directionX);
@@ -614,28 +730,31 @@ public sealed class PlayerShipMovementSystem :
             _nextWaypointIndex++;
         }
 
-        // Конечная точка достигнута.
-        if (_nextWaypointIndex >= points.Count)
+        if (_nextWaypointIndex < points.Count)
+            return;
+
+        var completedLanding = _pendingLandingTarget;
+
+        if (completedLanding is null)
         {
-            // Корабль достиг конечной точки маршрута.
-            var completedLanding = _pendingLandingTarget;
+            ClearPath();
+            return;
+        }
 
-            if (completedLanding is null)
-            {
-                ClearPath();
-                return;
-            }
+        if (IsWithinLandingRange(ship.Position, completedLanding))
+        {
+            BeginLandingAnimation(completedLanding, ref ship);
+            return;
+        }
 
-            // Проверяем положение планеты именно сейчас,
-            // а не в момент построения старого маршрута.
-            if (IsWithinLandingRange(ship.Position, completedLanding))
-            {
-                ClearPath();
-                LandingCompleted?.Invoke(completedLanding);
-            }
-
-            // Если планета ушла дальше допустимой дистанции,
-            // сохраняем приказ. Следующее обновление перестроит маршрут.
+        // Планета успела уйти дальше допустимой дистанции.
+        // Сохраняем приказ и ждём обновления маршрута.
+        if (completedLanding is PlanetObject)
+        {
+            _path = null;
+            _nextWaypointIndex = 0;
+            _distanceTravelled = 0.0;
+            ship.HasDestination = false;
         }
     }
 
@@ -687,6 +806,11 @@ public sealed class PlayerShipMovementSystem :
         }
         _hasLastLandingTargetPosition = false;
         _lastLandingTargetPosition = default;
+        _isLandingAnimating = false;
+        _landingAnimationCompleted = false;
+        _landingAnimationTarget = null;
+        _landingAnimationStartPosition = default;
+        _landingAnimationElapsedDays = 0.0;
     }
 
     public void Dispose()
