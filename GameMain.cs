@@ -163,26 +163,9 @@ internal sealed class GameMain : EngineGame
 
         _shipMovementSystem?.SetNavigationObstacles(
             _session.World.StarSystem.NavigationObstacles);
+
         var gameTime = _session.Simulation.Time;
 
-        // Посадка завершена, но переход выполняем
-        // только после окончания текущего игрового дня.
-        if (_pendingLandingTransition is not null &&
-            gameTime.IsPaused)
-        {
-            _landedObject = _pendingLandingTransition;
-            _pendingLandingTransition = null;
-
-            if (_shipMovementSystem is not null)
-            {
-                _shipMovementSystem.AcceptPointerCommands = false;
-            }
-
-            _sceneManager?.RequestScene(
-                new PlanetLandingScene());
-
-            return;
-        }
 
         _shipMovementSystem?.SetLandingObjects(
             _session.World.StarSystem.Objects);
@@ -293,6 +276,25 @@ internal sealed class GameMain : EngineGame
             return;
 
         var gameTime = _session.Simulation.Time;
+
+        // После завершения посадки переключаем сцену,
+        // но только когда игровой день полностью завершён.
+        if (_pendingLandingTransition is not null &&
+            gameTime.IsPaused)
+        {
+            _landedObject = _pendingLandingTransition;
+            _pendingLandingTransition = null;
+
+            if (_shipMovementSystem is not null)
+            {
+                _shipMovementSystem.AcceptPointerCommands = false;
+            }
+
+            _sceneManager?.RequestScene(
+                new PlanetLandingScene());
+
+            return;
+        }
 
         var endTurnPressed =
             Runtime.Services.Input.IsPressed(
@@ -757,10 +759,16 @@ internal sealed class GameMain : EngineGame
         if (_hoveredPlanet is null)
             return;
 
+        if ((DateTime.UtcNow - _planetHoverStartedAt).TotalSeconds
+            < PlanetHoverDelaySeconds)
+        {
+            return;
+        }
+
         var graphics = Runtime.Services.Graphics;
 
-        const float panelWidth = 300.0f;
-        const float panelHeight = 110.0f;
+        const float panelWidth = 340.0f;
+        const float panelHeight = 130.0f;
 
         var panelPosition = new Vector2(24.0f, 80.0f);
 
@@ -770,8 +778,21 @@ internal sealed class GameMain : EngineGame
                 new Vector2(panelWidth, panelHeight),
                 new UiColor(20, 25, 40, 230)));
 
-        // Текст добавим следующим шагом,
-        // после проверки доступного API шрифтов.
+        graphics.Submit(
+            new DrawDebugTextCommand(
+                _hoveredPlanet.Name,
+                new Vector2(38.0f, 94.0f),
+                new DebugColor(100, 200, 255),
+                2.0f,
+                DebugRenderSpace.Screen));
+
+        graphics.Submit(
+            new DrawDebugTextCommand(
+                _hoveredPlanet.Description,
+                new Vector2(38.0f, 130.0f),
+                DebugColor.White,
+                1.3f,
+                DebugRenderSpace.Screen));
     }
 
     private void RenderGameplay(double interpolationAlpha)
@@ -791,7 +812,13 @@ internal sealed class GameMain : EngineGame
 
         // Камера следует за кораблём.
         camera.Position = ship.Position;
-        _hoveredPlanet = GetHoveredPlanet();
+        var planetUnderCursor = GetHoveredPlanet();
+
+        if (!ReferenceEquals(planetUnderCursor, _hoveredPlanet))
+        {
+            _hoveredPlanet = planetUnderCursor;
+            _planetHoverStartedAt = DateTime.UtcNow;
+        }
         // Звёздное поле.
         foreach (var star in _stars)
         {
