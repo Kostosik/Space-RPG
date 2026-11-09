@@ -33,6 +33,11 @@ public sealed class PlayerShipMovementSystem :
 
     public bool AcceptPointerCommands { get; set; } = true;
     private const double PathEpsilon = 0.000001;
+    // Предпочтительный радиус поворота корабля.
+    private const double ShipTurnRadius = 40.0;
+
+    // Дополнительный запас для построения траектории.
+    private const double TurnPlanningClearance = 14.0;
     private IReadOnlyList<NavigationCircleObstacle> _obstacles;
     private static readonly IReadOnlyList<NavigationCircleObstacle>
         NoObstacles = Array.Empty<NavigationCircleObstacle>();
@@ -232,15 +237,52 @@ public sealed class PlayerShipMovementSystem :
             target.X,
             target.Y);
 
-        // Сначала строим новый маршрут.
-        // Старый пока остаётся нетронутым.
-        var path = _pathfinder.FindPath(
-            start,
-            goal,
-            _obstacles);
+        NavigationPath? path = null;
 
-        // Если новый маршрут невозможен,
-        // оставляем текущий маршрут без изменений.
+        // Сначала пытаемся построить маршрут с запасом
+        // пространства для выполнения поворотов.
+        double[] clearances =
+        [
+            TurnPlanningClearance,
+    TurnPlanningClearance * 0.5,
+    0.0
+        ];
+
+        foreach (var clearance in clearances)
+        {
+            var planningObstacles =
+                new NavigationCircleObstacle[_obstacles.Count];
+
+            for (var i = 0; i < _obstacles.Count; i++)
+            {
+                var obstacle = _obstacles[i];
+
+                planningObstacles[i] =
+                    new NavigationCircleObstacle(
+                        obstacle.Center,
+                        obstacle.Radius + clearance);
+            }
+
+            var rawPath = _pathfinder.FindPath(
+                start,
+                goal,
+                planningObstacles);
+
+            if (rawPath is null)
+                continue;
+
+            // Сглаживаем начальный поворот и повороты маршрута.
+            path = NavigationPathSmoother.Smooth(
+                rawPath,
+                ship.Rotation,
+                ShipTurnRadius,
+                _obstacles,
+                _pathfinder);
+
+            if (path is not null)
+                break;
+        }
+
         if (path is null)
             return;
 
@@ -355,6 +397,8 @@ public sealed class PlayerShipMovementSystem :
     }
 
     // Вызывается исключительно игровым временем.
+
+
     private void OnGameTimeAdvanced(
         GameTimeAdvanced advanced)
     {
@@ -385,14 +429,14 @@ public sealed class PlayerShipMovementSystem :
             return;
         }
 
-        // За игровой интервал корабль должен пройти
-        // ровно Speed * DeltaDistance.
+        // Постоянная скорость вдоль реальной траектории.
         var remainingDistance =
             (double)ship.MaxSpeed * dayFraction;
 
         var points = _path.Points;
 
-        while (_nextWaypointIndex < points.Count)
+        while (_nextWaypointIndex < points.Count &&
+               remainingDistance > PathEpsilon)
         {
             var waypoint = points[_nextWaypointIndex];
 
@@ -407,7 +451,6 @@ public sealed class PlayerShipMovementSystem :
                 (double)dx * dx +
                 (double)dy * dy);
 
-            // Точка уже достигнута.
             if (distance <= PathEpsilon)
             {
                 ship.Position = target;
@@ -415,47 +458,80 @@ public sealed class PlayerShipMovementSystem :
                 continue;
             }
 
-            // Направление движения по текущему сегменту.
+            // Направление траектории.
             var directionX = dx / (float)distance;
             var directionY = dy / (float)distance;
 
-            // Поворачиваем изображение корабля
-            // вдоль текущего сегмента маршрута.
+            // Нос корабля всегда совпадает
+            // с направлением его движения.
             ship.Rotation = MathF.Atan2(
                 directionY,
                 directionX);
 
-            // До следующей точки осталось меньше,
-            // чем можем пройти за этот игровой интервал.
-            if (remainingDistance < distance)
-            {
-                var fraction = remainingDistance / distance;
+            var travelDistance = Math.Min(
+                remainingDistance,
+                distance);
 
-                ship.Position = new Vector2(
-                    ship.Position.X + dx * (float)fraction,
-                    ship.Position.Y + dy * (float)fraction);
+            var fraction = travelDistance / distance;
 
-                _distanceTravelled += remainingDistance;
-                return;
-            }
+            ship.Position = new Vector2(
+                ship.Position.X + dx * (float)fraction,
+                ship.Position.Y + dy * (float)fraction);
 
-            // Достигли промежуточной точки.
+            _distanceTravelled += travelDistance;
+            remainingDistance -= travelDistance;
+
+            if (travelDistance < distance - PathEpsilon)
+                break;
+
             ship.Position = target;
-
-            _distanceTravelled += distance;
-            remainingDistance -= distance;
-
             _nextWaypointIndex++;
         }
-        // Корабль достиг конечной точки.
-        var completedLanding = _pendingLandingTarget;
 
-        ClearPath();
-
-        if (completedLanding is not null)
+        // Конечная точка достигнута.
+        if (_nextWaypointIndex >= points.Count)
         {
-            LandingCompleted?.Invoke(completedLanding);
+            var completedLanding = _pendingLandingTarget;
+
+            ClearPath();
+
+            if (completedLanding is not null)
+            {
+                LandingCompleted?.Invoke(completedLanding);
+            }
         }
+    }
+
+
+
+    private static float MoveTowardsAngle(
+        float current,
+        float target,
+        float maxDelta)
+    {
+        if (maxDelta <= 0.0f)
+            return current;
+
+        var delta = NormalizeAngle(target - current);
+
+        if (MathF.Abs(delta) <= maxDelta)
+            return current + delta;
+
+        return current +
+               MathF.CopySign(maxDelta, delta);
+    }
+
+    private static float NormalizeAngle(float angle)
+    {
+        const float twoPi = MathF.PI * 2.0f;
+
+        while (angle > MathF.PI)
+            angle -= twoPi;
+
+        while (angle < -MathF.PI)
+            angle += twoPi;
+
+        return angle;
     }
 
     private void ClearPath()

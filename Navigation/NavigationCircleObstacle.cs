@@ -8,16 +8,23 @@ public sealed class NavigationCircleObstacle
         double radius)
     {
         if (!center.IsFinite)
-            throw new ArgumentException("Center must be finite.");
+        {
+            throw new ArgumentException(
+                "Center must be finite.",
+                nameof(center));
+        }
 
-        if (!double.IsFinite(radius) || radius <= 0)
-            throw new ArgumentOutOfRangeException(nameof(radius));
+        if (!double.IsFinite(radius) || radius <= 0.0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(radius));
+        }
 
         Center = center;
         Radius = radius;
     }
 
-    public NavigationVector2 Center { get; internal set; }
+    public NavigationVector2 Center { get; }
 
     public double Radius { get; }
 }

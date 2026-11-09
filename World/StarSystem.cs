@@ -1,17 +1,14 @@
-﻿using GameProject.Navigation;
+﻿
+using GameProject.Navigation;
 
 namespace GameProject.World;
 
 public sealed class StarSystem
 {
-    private const double NavigationClearance = 10.0;
-    private readonly Dictionary<PlanetObject, NavigationCircleObstacle>
-    _planetObstacles = new();
     public StarSystem(
         StarObject star,
         IReadOnlyList<StarSystemObject> objects)
     {
-
         ArgumentNullException.ThrowIfNull(star);
         ArgumentNullException.ThrowIfNull(objects);
 
@@ -25,58 +22,34 @@ public sealed class StarSystem
         Star = star;
         Objects = Array.AsReadOnly(objects.ToArray());
 
-        var obstacles = new List<NavigationCircleObstacle>
-        {
-            new(
-                new NavigationVector2(star.X, star.Y),
-                star.NavigationRadius)
-        };
-
-        foreach (var obj in Objects)
-        {
-            // Звезда уже добавлена отдельно:
-            // у неё свой навигационный радиус.
-            if (obj is StarObject)
-                continue;
-
-            var obstacle = new NavigationCircleObstacle(
-                new NavigationVector2(obj.X, obj.Y),
-                obj.VisualRadius + NavigationClearance);
-
-            obstacles.Add(obstacle);
-
-            if (obj is PlanetObject planet)
+        // Единственное препятствие для навигации — звезда.
+        NavigationObstacles = Array.AsReadOnly(
+            new[]
             {
-                _planetObstacles.Add(planet, obstacle);
-            }
-        }
-
-        NavigationObstacles =
-            Array.AsReadOnly(obstacles.ToArray());
+                new NavigationCircleObstacle(
+                    new NavigationVector2(star.X, star.Y),
+                    star.NavigationRadius)
+            });
     }
 
     public void AdvanceOrbit(double elapsedGameDays)
     {
         if (!double.IsFinite(elapsedGameDays) ||
-            elapsedGameDays <= 0)
+            elapsedGameDays <= 0.0)
         {
             return;
         }
 
-        foreach (var entry in _planetObstacles)
+        // Орбиты планет не влияют на навигационные препятствия.
+        foreach (var obj in Objects)
         {
-            var planet = entry.Key;
+            if (obj is not PlanetObject planet)
+                continue;
 
-            // Двигаем планету вокруг звезды.
             planet.AdvanceOrbit(
                 elapsedGameDays,
                 Star.X,
                 Star.Y);
-
-            // Обновляем положение навигационного препятствия.
-            entry.Value.Center = new NavigationVector2(
-                planet.X,
-                planet.Y);
         }
     }
 

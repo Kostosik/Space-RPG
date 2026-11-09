@@ -187,10 +187,6 @@ internal sealed class GameMain : EngineGame
             gameTime,
             () => _shipMovementSystem?.HasActiveRoute == true);
 
-        // ѕодключаем перемещение корабл€ к игровому времени.
-        _shipMovementSystem?.AttachGameTime(
-            _session.Simulation.Time);
-
         Runtime.Services.Camera.Zoom = 1.0f;
         Runtime.Services.Camera.Position =
             new Vector2(0.0f, 0.0f); ;
@@ -267,11 +263,37 @@ internal sealed class GameMain : EngineGame
         _sceneManager?.Update(time);
     }
 
+
     private void UpdateGameplay(TimeSnapshot time)
     {
+        _ = time;
+
         if (_session is null)
             return;
 
+        var gameTime = _session.Simulation.Time;
+
+        var endTurnPressed =
+            Runtime.Services.Input.IsPressed(
+                ShipInputActions.EndTurn);
+
+        var shiftHeld =
+            Runtime.Services.Input.IsDown(
+                ShipInputActions.Shift);
+
+        // ¬о врем€ исполнени€ дн€ разрешаем только
+        // запрос остановки через Space.
+        if (!gameTime.IsPaused)
+        {
+            if (endTurnPressed)
+            {
+                _turnExecution?.PressEndTurn(shiftHeld);
+            }
+
+            return;
+        }
+
+        // Ќиже доступно управление только на паузе.
         if (Runtime.Services.Input.IsPressed(
                 ShipInputActions.ToggleGalaxyMap))
         {
@@ -298,16 +320,12 @@ internal sealed class GameMain : EngineGame
             return;
         }
 
-        if (Runtime.Services.Input.IsPressed(
-                ShipInputActions.EndTurn))
+        if (endTurnPressed)
         {
-            var shiftHeld =
-                Runtime.Services.Input.IsDown(
-                    ShipInputActions.Shift);
-
             _turnExecution?.PressEndTurn(shiftHeld);
         }
     }
+
 
     private void TryGalaxyJump()
     {

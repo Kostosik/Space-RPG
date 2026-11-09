@@ -94,6 +94,7 @@ public sealed class GameTime
         AdvanceFractional(elapsedTicks);
     }
 
+
     public void AdvanceBy(Duration interval)
     {
         if (interval.IsNegative)
@@ -102,9 +103,12 @@ public sealed class GameTime
                 nameof(interval));
         }
 
+        if (IsPaused)
+            return;
+
         var remainingTicks = interval.Value.Ticks;
 
-        while (remainingTicks > 0)
+        while (remainingTicks > 0 && !IsPaused)
         {
             var ticksIntoDay =
                 _elapsed.Value.Ticks % TicksPerDay;
@@ -124,28 +128,27 @@ public sealed class GameTime
             _elapsed += step;
             remainingTicks -= stepTicks;
 
-            // Сначала обновляются все подписчики времени.
             Advanced?.Invoke(
                 new GameTimeAdvanced(
                     previous,
                     _elapsed,
                     step));
 
-            // Затем обрабатывается граница игровых суток.
+            // Граница суток должна обрабатываться,
+            // даже если один из обработчиков поставил игру на паузу.
             if (stepTicks == ticksToBoundary)
             {
                 DayCompleted?.Invoke(
                     new GameDayCompleted(
                         DayNumber - 1,
                         _elapsed));
-
-                // Если выполнение хода потребовало паузы,
-                // не продолжаем обрабатывать остаток интервала.
-                if (IsPaused)
-                    break;
             }
+
+            // Немедленно прекращаем дальнейшее продвижение времени,
+            // если обработчик запросил паузу.
         }
     }
+
 
     private void AdvanceFractional(decimal ticks)
     {
