@@ -36,7 +36,7 @@ internal static class GalaxyJumpService
             return GalaxyJumpResult.TargetNotFound;
 
         if (!galaxy.CanTravel(
-                navigation.CurrentSystemId,
+                session.World.CurrentSystemId,
                 target.Id))
         {
             return GalaxyJumpResult.NoConnection;
@@ -49,7 +49,7 @@ internal static class GalaxyJumpService
         }
 
         var current = galaxy.GetSystem(
-            navigation.CurrentSystemId);
+            session.World.CurrentSystemId);
 
         if (current is null)
             return GalaxyJumpResult.JumpFailed;
@@ -103,7 +103,7 @@ internal static class GalaxyJumpService
             return GalaxyJumpResult.TargetNotFound;
 
         var current = galaxy.GetSystem(
-            navigation.CurrentSystemId);
+            session.World.CurrentSystemId);
 
         if (current is null)
             return GalaxyJumpResult.JumpFailed;
@@ -111,8 +111,7 @@ internal static class GalaxyJumpService
         if (!galaxy.CanTravel(current.Id, target.Id))
             return GalaxyJumpResult.NoConnection;
 
-        if (fuelCost <= 0 ||
-            navigation.Fuel < fuelCost)
+        if (!navigation.TryConsumeFuel(fuelCost))
         {
             return GalaxyJumpResult.NotEnoughFuel;
         }
@@ -126,13 +125,9 @@ internal static class GalaxyJumpService
         if (!double.IsFinite(length) || length <= 0.000001)
             return GalaxyJumpResult.JumpFailed;
 
-        // Переход разрешён только при успешном списании топлива.
-        if (!navigation.TryJump(
-                galaxy,
-                target.Id,
-                fuelCost))
+        if (!navigation.TryConsumeFuel(fuelCost))
         {
-            return GalaxyJumpResult.JumpFailed;
+            return GalaxyJumpResult.NotEnoughFuel;
         }
 
         // Загружаем новую звёздную систему.

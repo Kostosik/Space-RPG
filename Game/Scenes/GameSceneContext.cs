@@ -13,11 +13,12 @@ public sealed class GameSceneContext
         Action<TimeSnapshot> updateGameplay,
         Action<double> renderGameplay,
         Action drawLandingScreen,
-        Action takeOffFromPlanet)
+        Action takeOffFromPlanet,
+        Action exitGame)
     {
         Runtime = runtime;
         PointerInput = pointerInput;
-
+        ExitGame = exitGame;
         EnterGameplay = enterGameplay;
         UpdateGameplay = updateGameplay;
         RenderGameplay = renderGameplay;
@@ -26,7 +27,7 @@ public sealed class GameSceneContext
     }
 
     public EngineRuntime Runtime { get; }
-
+    internal Action ExitGame { get; }
     public IPointerInput? PointerInput { get; }
 
     internal Action EnterGameplay { get; }

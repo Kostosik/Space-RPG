@@ -6,8 +6,22 @@ namespace GameProject.World;
 
 public sealed class WorldState
 {
-    private readonly Dictionary<string, StarSystem> _starSystems =
+    private sealed class StarSystemState
+    {
+        public StarSystemState(StarSystem starSystem)
+        {
+            StarSystem = starSystem;
+        }
+
+        public StarSystem StarSystem { get; }
+
+        public TimeSpan LastSimulatedAt { get; set; }
+    }
+
+    private readonly Dictionary<string, StarSystemState> _starSystems =
         new(StringComparer.OrdinalIgnoreCase);
+
+    private TimeSpan _worldElapsedTime;
 
     private WorldState(Guid id, int seed)
     {
@@ -25,13 +39,10 @@ public sealed class WorldState
             ?? throw new InvalidOperationException(
                 "Starting galaxy system was not generated.");
 
-        // Начальная система создаётся сразу.
-        var startingStarSystem = StarSystemGenerator.Generate(
-            startingSystem.Seed);
-
         _starSystems.Add(
             startingSystem.Id,
-            startingStarSystem);
+            new StarSystemState(
+                StarSystemGenerator.Generate(startingSystem.Seed)));
 
         CurrentSystemId = startingSystem.Id;
     }
@@ -42,15 +53,39 @@ public sealed class WorldState
 
     public GalaxyMap Galaxy { get; }
 
-    // ID текущей системы.
     public string CurrentSystemId { get; private set; }
 
-    // Состояние текущей звёздной системы.
     public StarSystem StarSystem =>
-        _starSystems[CurrentSystemId];
+        _starSystems[CurrentSystemId].StarSystem;
 
-    // Количество систем, состояние которых уже создано.
     public int VisitedSystemCount => _starSystems.Count;
+
+    /// <summary>
+    /// Advances the active system to the specified global game time.
+    /// Inactive systems are updated lazily when entered.
+    /// </summary>
+    public void AdvanceSimulationTo(TimeSpan elapsedWorldTime)
+    {
+        if (elapsedWorldTime < TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(
+                nameof(elapsedWorldTime));
+
+        if (elapsedWorldTime < _worldElapsedTime)
+            throw new ArgumentOutOfRangeException(
+                nameof(elapsedWorldTime),
+                "World time cannot move backwards.");
+
+        if (elapsedWorldTime == _worldElapsedTime)
+            return;
+
+        var currentState = _starSystems[CurrentSystemId];
+
+        AdvanceSystemTo(
+            currentState,
+            elapsedWorldTime);
+
+        _worldElapsedTime = elapsedWorldTime;
+    }
 
     public void EnterSystem(string systemId)
     {
@@ -63,25 +98,44 @@ public sealed class WorldState
                 nameof(systemId));
         }
 
-        // Генерируем систему только при первом посещении.
         if (!_starSystems.TryGetValue(
                 system.Id,
-                out _))
+                out var state))
         {
-            var starSystem = StarSystemGenerator.Generate(
-                system.Seed);
+            state = new StarSystemState(
+                StarSystemGenerator.Generate(system.Seed));
 
-            _starSystems.Add(
-                system.Id,
-                starSystem);
+            _starSystems.Add(system.Id, state);
         }
 
-        // При повторном посещении используем сохранённый экземпляр.
+        // Восстанавливаем систему относительно глобального времени.
+        AdvanceSystemTo(
+            state,
+            _worldElapsedTime);
+
         CurrentSystemId = system.Id;
     }
 
-    public static WorldState Create(
-        WorldStartData startData)
+    private static void AdvanceSystemTo(
+        StarSystemState state,
+        TimeSpan targetTime)
+    {
+        var elapsed = targetTime - state.LastSimulatedAt;
+
+        if (elapsed < TimeSpan.Zero)
+            throw new InvalidOperationException(
+                "System simulation time cannot move backwards.");
+
+        if (elapsed > TimeSpan.Zero)
+        {
+            state.StarSystem.AdvanceOrbit(
+                elapsed.TotalDays);
+        }
+
+        state.LastSimulatedAt = targetTime;
+    }
+
+    public static WorldState Create(WorldStartData startData)
     {
         return new WorldState(
             Guid.NewGuid(),

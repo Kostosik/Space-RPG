@@ -16,6 +16,7 @@ internal static class GalaxyMapRenderer
     public static void Draw(
         EngineRuntime runtime,
         GalaxyMap galaxy,
+        string currentSystemId,
         GalaxyNavigationState navigation,
         string selectedSystemId,
         string message,
@@ -49,7 +50,7 @@ internal static class GalaxyMapRenderer
 
         DrawText(
             runtime,
-            $"CURRENT SYSTEM: {navigation.CurrentSystemId.ToUpperInvariant()}",
+            $"CURRENT SYSTEM: {currentSystemId.ToUpperInvariant()}",
             new Vector2(35, 110),
             DebugColor.Green);
 
@@ -89,7 +90,7 @@ internal static class GalaxyMapRenderer
             var position = GetScreenPosition(system);
 
             var isCurrent =
-                system.Id == navigation.CurrentSystemId;
+                system.Id == currentSystemId;
 
             var isSelected =
                 system.Id == selectedSystemId;
@@ -145,7 +146,7 @@ internal static class GalaxyMapRenderer
                 2.0f);
 
             var isConnected = galaxy.CanTravel(
-                navigation.CurrentSystemId,
+                currentSystemId,
                 selected.Id);
 
             DrawText(
@@ -172,7 +173,7 @@ internal static class GalaxyMapRenderer
 
             DrawText(
                 runtime,
-                selected.Id == navigation.CurrentSystemId
+                selected.Id == currentSystemId
                     ? "CURRENT LOCATION"
                     : isConnected && navigation.Fuel >= jumpFuelCost
                         ? "PRESS ENTER TO JUMP"

@@ -313,7 +313,8 @@ internal sealed class GameMain : EngineGame
 
             drawLandingScreen: DrawPlanetScreen,
 
-            takeOffFromPlanet: TakeOffFromPlanet
+            takeOffFromPlanet: TakeOffFromPlanet,
+            exitGame: _hostContext.Close
         );
 
         // Создаём менеджер сцен.
@@ -324,17 +325,16 @@ internal sealed class GameMain : EngineGame
         _sceneManager.Start(new MainMenuScene());
     }
 
+
     private void OnGameTimeAdvanced(GameTimeAdvanced advanced)
     {
         if (_session is null)
             return;
 
-        // Переводим интервал времени в игровые дни.
-        var elapsedGameDays = advanced.Delta.Value.TotalDays;
-
-        // Двигаем все планеты текущей звёздной системы.
-        _session.World.StarSystem.AdvanceOrbit(elapsedGameDays);
+        _session.World.AdvanceSimulationTo(
+            advanced.CurrentElapsed.Value);
     }
+
 
     protected override void OnUpdate(TimeSnapshot time)
     {
@@ -414,7 +414,7 @@ internal sealed class GameMain : EngineGame
             if (_isGalaxyMapOpen)
             {
                 _selectedGalaxySystemId =
-                    _session.Player.GalaxyNavigation.CurrentSystemId;
+                    _session.World.CurrentSystemId;
 
                 _galaxyMapMessage = "SELECT A STAR SYSTEM";
             }
@@ -938,6 +938,7 @@ internal sealed class GameMain : EngineGame
             GalaxyMapRenderer.Draw(
                 Runtime,
                 _session.World.Galaxy,
+                _session.World.CurrentSystemId,
                 _session.Player.GalaxyNavigation,
                 _selectedGalaxySystemId,
                 _galaxyMapMessage,
