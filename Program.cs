@@ -21,7 +21,9 @@ internal static class Program
                 "Space-RPG.vibeproject");
 
         var inputActions = new InputActionMap();
-
+        inputActions.Bind(
+    ShipInputActions.ToggleShipWindow,
+    new InputBinding("Keyboard.I"));
         inputActions.Bind(
     ShipInputActions.ToggleGalaxyMap,
     new InputBinding("Keyboard.M"));

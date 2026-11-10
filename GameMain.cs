@@ -19,6 +19,8 @@ using GameProject.Game.Scenes;
 using GameProject.Player;
 using GameProject.Ships;
 using GameProject.Simulation;
+using GameProject.UI;
+using GameProject.UI.Ship;
 using GameProject.World;
 
 namespace GameProject;
@@ -65,6 +67,13 @@ internal sealed class GameMain : EngineGame
 
     private EntityId _shipEntity;
 
+    private ShipWindow? _shipWindow;
+
+    private readonly ShipWindowPresenter _shipWindowPresenter = new();
+
+    private bool _shipWindowOwnsPointerInput;
+    private bool _previousAcceptPointerCommands;
+
     private Vector2[] _stars = [];
     private TurnExecutionController? _turnExecution;
     private PlanetObject? _hoveredPlanet;
@@ -79,6 +88,7 @@ internal sealed class GameMain : EngineGame
         ArgumentException.ThrowIfNullOrWhiteSpace(startupScenePath);
 
         _hostContext = context;
+
         _startupScenePath = Path.GetFullPath(startupScenePath);
         _pointerInput = context.PointerInput;
     }
@@ -199,7 +209,8 @@ internal sealed class GameMain : EngineGame
     _hostContext.Cursor);
 
         _hostContext.Resized += OnWindowResized;
-
+        _shipWindow = new ShipWindow(_ui);
+        _shipWindow.Closed += OnShipWindowClosed;
         InitializeStarterLoadout(playerShip);
 
         playerShip.EquipmentChanged += OnPlayerShipEquipmentChanged;
@@ -334,6 +345,8 @@ internal sealed class GameMain : EngineGame
             _landedObject = _pendingLandingTransition;
             _pendingLandingTransition = null;
 
+            _shipWindow?.Close();
+
             if (_shipMovementSystem is not null)
             {
                 _shipMovementSystem.AcceptPointerCommands = false;
@@ -349,6 +362,11 @@ internal sealed class GameMain : EngineGame
         {
             CompletePendingGalaxyJump();
             return;
+        }
+        if (Runtime.Services.Input.IsPressed(
+        ShipInputActions.ToggleShipWindow))
+        {
+            ToggleShipWindow();
         }
         var endTurnPressed =
             Runtime.Services.Input.IsPressed(
@@ -369,7 +387,8 @@ internal sealed class GameMain : EngineGame
 
             return;
         }
-
+        if (_shipWindow?.IsOpen == true)
+            return;
         // Ќиже доступно управление только на паузе.
         if (Runtime.Services.Input.IsPressed(
                 ShipInputActions.ToggleGalaxyMap))
@@ -979,6 +998,7 @@ internal sealed class GameMain : EngineGame
     private void OnPlayerShipEquipmentChanged()
     {
         ApplyPlayerShipStats();
+        RefreshShipWindow();
     }
 
     private void ApplyPlayerShipStats(bool fillFuel = false)
@@ -1163,6 +1183,79 @@ internal sealed class GameMain : EngineGame
             2.0f);
     }
 
+    private void ToggleShipWindow()
+    {
+        if (_shipWindow is null ||
+            _session is null ||
+            _starterShipDefinition is null)
+        {
+            return;
+        }
+
+        if (_shipWindow.IsOpen)
+        {
+            _shipWindow.Close();
+            return;
+        }
+
+        if (!_session.Simulation.Time.IsPaused ||
+            _isGalaxyMapOpen ||
+            _landedObject is not null ||
+            _pendingLandingTransition is not null)
+        {
+            return;
+        }
+
+        var viewData = _shipWindowPresenter.CreateViewData(
+            _starterShipDefinition,
+            _session.Player.Ship,
+            _equipmentDefinitions);
+
+        if (_shipMovementSystem is not null)
+        {
+            _previousAcceptPointerCommands =
+                _shipMovementSystem.AcceptPointerCommands;
+
+            _shipMovementSystem.AcceptPointerCommands = false;
+            _shipWindowOwnsPointerInput = true;
+        }
+
+        _shipWindow.Show(
+            viewData,
+            new Vector2(40.0f, 70.0f));
+    }
+
+    private void OnShipWindowClosed()
+    {
+        if (!_shipWindowOwnsPointerInput)
+            return;
+
+        if (_shipMovementSystem is not null)
+        {
+            _shipMovementSystem.AcceptPointerCommands =
+                _previousAcceptPointerCommands;
+        }
+
+        _shipWindowOwnsPointerInput = false;
+    }
+
+    private void RefreshShipWindow()
+    {
+        if (_shipWindow?.IsOpen != true ||
+            _session is null ||
+            _starterShipDefinition is null)
+        {
+            return;
+        }
+
+        var viewData = _shipWindowPresenter.CreateViewData(
+            _starterShipDefinition,
+            _session.Player.Ship,
+            _equipmentDefinitions);
+
+        _shipWindow.Refresh(viewData);
+    }
+
     private void DrawLandingText(
         string text,
         Vector2 position,
@@ -1185,6 +1278,14 @@ internal sealed class GameMain : EngineGame
 
     protected override void OnShutdown()
     {
+        _shipWindow?.Close();
+
+        if (_shipWindow is not null)
+        {
+            _shipWindow.Closed -= OnShipWindowClosed;
+            _shipWindow = null;
+        }
+
         _turnExecution?.Dispose();
         _turnExecution = null;
         if (_shipMovementSystem is not null)

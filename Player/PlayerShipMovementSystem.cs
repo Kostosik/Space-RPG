@@ -24,8 +24,8 @@ public sealed class PlayerShipMovementSystem :
     IUpdateSystem,
     IDisposable
 {
-    private const double SystemBoundaryClearance =
-    StarSystem.DefaultJumpBoundaryClearance;
+    private const double JumpPointClearance =
+        StarSystem.DefaultJumpBoundaryClearance;
     private StarSystem? _starSystem;
     private IReadOnlyList<StarSystemObject> _landingObjects =
     Array.Empty<StarSystemObject>();
@@ -294,40 +294,12 @@ public sealed class PlayerShipMovementSystem :
                 landingTarget,
                 ship.Position);
         }
-        else if (_starSystem is not null)
-        {
-            var boundedTarget = _starSystem.ClampToJumpBoundary(
-                new NavigationVector2(target.X, target.Y),
-                SystemBoundaryClearance);
-
-            target = new Vector2(
-                (float)boundedTarget.X,
-                (float)boundedTarget.Y);
-        }
 
         TryBuildAndSetRoute(
             target,
             landingTarget,
             ref ship,
             isSystemExitRoute: false);
-    }
-
-    private bool IsPathInsideJumpBoundary(NavigationPath path)
-    {
-        if (_starSystem is null)
-            return true;
-
-        foreach (var point in path.Points)
-        {
-            if (!_starSystem.IsWithinJumpBoundary(
-                    point,
-                    SystemBoundaryClearance))
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     private bool TryBuildAndSetRoute(
@@ -383,11 +355,8 @@ public sealed class PlayerShipMovementSystem :
                 _obstacles,
                 _pathfinder);
 
-            if (candidate is null ||
-                !IsPathInsideJumpBoundary(candidate))
-            {
+            if (candidate is null)
                 continue;
-            }
 
             path = candidate;
             break;
@@ -675,11 +644,8 @@ public sealed class PlayerShipMovementSystem :
             _obstacles);
 
         // Не заменяем рабочий маршрут, если новый построить нельзя.
-        if (newPath is null ||
-            !IsPathInsideJumpBoundary(newPath))
-        {
+        if (newPath is null)
             return;
-        }
 
         if (newPath.Length <= PathEpsilon)
         {
@@ -720,7 +686,7 @@ public sealed class PlayerShipMovementSystem :
 
         if (!_starSystem.IsWithinJumpBoundary(
                 destination,
-                SystemBoundaryClearance))
+                JumpPointClearance))
         {
             return false;
         }

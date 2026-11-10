@@ -27,4 +27,6 @@ public static class ShipInputActions
 
     public static readonly InputAction GalaxyJump =
         new("GalaxyJump");
+    public static readonly InputAction ToggleShipWindow =
+        new("ToggleShipWindow");
 }
