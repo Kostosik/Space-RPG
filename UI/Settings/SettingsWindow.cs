@@ -94,40 +94,32 @@ public sealed class SettingsWindow : IDisposable
         _window.SetContent(content);
     }
 
-    private UiPanel BuildDisplaySection(
-        SettingsViewData data)
+
+    private UiPanel BuildDisplaySection(SettingsViewData data)
     {
-        var section = CreateSection("DISPLAY");
+        var (section, content) = CreateSection("DISPLAY");
 
         var resolutionRow = CreateRow("RESOLUTION");
 
         var resolution = new UiDropdown(_ui.Overlays)
         {
             Width = 260.0f,
-            Height = 42.0f
+            Height = 42.0f,
+            VerticalAlignment = UiVerticalAlignment.Center
         };
 
         foreach (var option in data.Resolutions)
-        {
             resolution.AddOption(option.Label);
-        }
 
-        resolution.SetSelectedIndex(
-            data.SelectedResolutionIndex);
+        resolution.SetSelectedIndex(data.SelectedResolutionIndex);
 
         resolution.SelectionChanged += (index, _) =>
-        {
             _presenter.SetResolution(index);
-        };
 
         resolutionRow.AddChild(resolution);
-        section.AddChild(resolutionRow);
+        content.AddChild(resolutionRow);
 
-        var toggles = new UiStackPanel
-        {
-            Orientation = UiOrientation.Horizontal,
-            Spacing = 20.0f
-        };
+        var optionsRow = CreateRow("OPTIONS");
 
         var fullscreen = new UiToggle("FULLSCREEN")
         {
@@ -145,36 +137,39 @@ public sealed class SettingsWindow : IDisposable
         vsync.SetValue(data.VSync);
         vsync.ValueChanged += _presenter.SetVSync;
 
-        toggles.AddChild(fullscreen);
-        toggles.AddChild(vsync);
+        optionsRow.AddChild(fullscreen);
+        optionsRow.AddChild(vsync);
 
-        section.AddChild(toggles);
+        content.AddChild(optionsRow);
 
         return section;
     }
 
-    private UiPanel BuildAudioSection(
-        SettingsViewData data)
-    {
-        var section = CreateSection("AUDIO");
 
-        section.AddChild(BuildVolumeRow(
+
+    private UiPanel BuildAudioSection(SettingsViewData data)
+    {
+        var (section, content) = CreateSection("AUDIO");
+
+        content.AddChild(BuildVolumeRow(
             "MASTER VOLUME",
             data.MasterVolume,
             _presenter.SetMasterVolume));
 
-        section.AddChild(BuildVolumeRow(
+        content.AddChild(BuildVolumeRow(
             "MUSIC VOLUME",
             data.MusicVolume,
             _presenter.SetMusicVolume));
 
-        section.AddChild(BuildVolumeRow(
+        content.AddChild(BuildVolumeRow(
             "EFFECTS VOLUME",
             data.EffectsVolume,
             _presenter.SetEffectsVolume));
 
         return section;
     }
+
+
 
     private UiWidget BuildVolumeRow(
         string title,
@@ -186,16 +181,17 @@ public sealed class SettingsWindow : IDisposable
         var slider = new UiSlider
         {
             Width = 300.0f,
-            Height = 32.0f,
+            Height = 24.0f,
+            VerticalAlignment = UiVerticalAlignment.Center,
             Value = value
         };
 
-        var valueLabel = new UiLabel(
-            $"{value * 100.0f:0}%")
+        var valueLabel = new UiLabel($"{value * 100.0f:0}%")
         {
             Width = 55.0f,
-            Height = 32.0f,
-            FontSize = 14.0f
+            Height = 28.0f,
+            FontSize = 14.0f,
+            VerticalAlignment = UiVerticalAlignment.Center
         };
 
         slider.ValueChanged += newValue =>
@@ -210,30 +206,37 @@ public sealed class SettingsWindow : IDisposable
         return row;
     }
 
-    private UiPanel BuildGameplaySection(
-        SettingsViewData data)
-    {
-        var section = CreateSection("GAMEPLAY");
 
-        var tooltips = new UiToggle("PLANET TOOLTIPS")
+
+    private UiPanel BuildGameplaySection(SettingsViewData data)
+    {
+        var (section, content) = CreateSection("GAMEPLAY");
+
+        var row = CreateRow("PLANET TOOLTIPS");
+
+        var tooltips = new UiToggle("SHOW")
         {
-            Width = 240.0f
+            Width = 200.0f
         };
 
         tooltips.SetValue(data.ShowPlanetTooltips);
         tooltips.ValueChanged += _presenter.SetPlanetTooltips;
 
-        section.AddChild(tooltips);
+        row.AddChild(tooltips);
+        content.AddChild(row);
 
         return section;
     }
+
 
     private UiStackPanel BuildFooter()
     {
         var footer = new UiStackPanel
         {
             Orientation = UiOrientation.Horizontal,
-            Spacing = 12.0f
+            Spacing = 12.0f,
+            Height = 42.0f,
+            HorizontalAlignment = UiHorizontalAlignment.Right
         };
 
         var reset = new UiButton("RESET DEFAULTS")
@@ -279,7 +282,9 @@ public sealed class SettingsWindow : IDisposable
         return footer;
     }
 
-    private static UiPanel CreateSection(string title)
+
+    private static (UiPanel Panel, UiStackPanel Content) CreateSection(
+        string title)
     {
         var panel = new UiPanel
         {
@@ -291,7 +296,7 @@ public sealed class SettingsWindow : IDisposable
         var content = new UiStackPanel
         {
             Orientation = UiOrientation.Vertical,
-            Spacing = 10.0f
+            Spacing = 12.0f
         };
 
         content.AddChild(new UiLabel(title)
@@ -307,8 +312,10 @@ public sealed class SettingsWindow : IDisposable
 
         panel.AddChild(content);
 
-        return panel;
+        return (panel, content);
     }
+
+
 
     private static UiStackPanel CreateRow(string title)
     {
@@ -322,12 +329,14 @@ public sealed class SettingsWindow : IDisposable
         row.AddChild(new UiLabel(title)
         {
             Width = 190.0f,
-            Height = 36.0f,
-            FontSize = 14.0f
+            Height = 32.0f,
+            FontSize = 14.0f,
+            VerticalAlignment = UiVerticalAlignment.Center
         });
 
         return row;
     }
+
 
     private void OnWindowClosed()
     {

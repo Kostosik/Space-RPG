@@ -8,21 +8,63 @@ public static class NpcArchetypeDefinitionValidator
 
         ValidateId(definition.Id, "ID");
         ValidateId(definition.Name, "Name");
-        ValidateId(
-            definition.ShipDefinitionId,
-            "ShipDefinitionId");
 
-        if (definition.StartingCredits < 0)
+        if (!float.IsFinite(definition.SpawnWeight) ||
+            definition.SpawnWeight <= 0f)
         {
             throw new InvalidDataException(
-                $"NPC archetype '{definition.Id}' has invalid starting credits.");
+                $"NPC archetype '{definition.Id}' has invalid spawn weight.");
         }
 
-        ValidateRatio(
+        if (definition.ShipOptions is null ||
+            definition.ShipOptions.Count == 0)
+        {
+            throw new InvalidDataException(
+                $"NPC archetype '{definition.Id}' has no ship options.");
+        }
+
+        var shipIds = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var option in definition.ShipOptions)
+        {
+            if (option is null)
+            {
+                throw new InvalidDataException(
+                    $"NPC archetype '{definition.Id}' has a null ship option.");
+            }
+
+            ValidateId(
+                option.ShipDefinitionId,
+                "ShipDefinitionId");
+
+            if (!shipIds.Add(option.ShipDefinitionId))
+            {
+                throw new InvalidDataException(
+                    $"NPC archetype '{definition.Id}' contains duplicate ship " +
+                    $"'{option.ShipDefinitionId}'.");
+            }
+
+            if (!float.IsFinite(option.Weight) ||
+                option.Weight <= 0f)
+            {
+                throw new InvalidDataException(
+                    $"NPC archetype '{definition.Id}' has invalid ship weight.");
+            }
+        }
+
+        if (definition.StartingCredits is null ||
+            definition.StartingCredits.Min < 0 ||
+            definition.StartingCredits.Max < definition.StartingCredits.Min)
+        {
+            throw new InvalidDataException(
+                $"NPC archetype '{definition.Id}' has invalid credits range.");
+        }
+
+        ValidateRange(
             definition.StartingFuelRatio,
             nameof(definition.StartingFuelRatio));
 
-        ValidateRatio(
+        ValidateRange(
             definition.StartingHullCondition,
             nameof(definition.StartingHullCondition));
 
@@ -36,9 +78,25 @@ public static class NpcArchetypeDefinitionValidator
         {
             ValidateId(trait.Key, "Personality trait ID");
 
-            ValidateRatio(
+            ValidateRange(
                 trait.Value,
                 $"Personality trait '{trait.Key}'");
+        }
+    }
+
+    private static void ValidateRange(
+        NpcFloatRangeDefinition range,
+        string fieldName)
+    {
+        if (range is null ||
+            !float.IsFinite(range.Min) ||
+            !float.IsFinite(range.Max) ||
+            range.Min < 0f ||
+            range.Max > 1f ||
+            range.Min > range.Max)
+        {
+            throw new InvalidDataException(
+                $"Invalid range for '{fieldName}'. Expected 0..1.");
         }
     }
 
@@ -54,19 +112,6 @@ public static class NpcArchetypeDefinitionValidator
         {
             throw new InvalidDataException(
                 $"NPC archetype has invalid {fieldName}.");
-        }
-    }
-
-    private static void ValidateRatio(
-        float value,
-        string fieldName)
-    {
-        if (!float.IsFinite(value) ||
-            value < 0f ||
-            value > 1f)
-        {
-            throw new InvalidDataException(
-                $"Invalid value for '{fieldName}'. Expected 0..1.");
         }
     }
 }

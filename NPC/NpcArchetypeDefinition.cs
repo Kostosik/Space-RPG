@@ -10,14 +10,45 @@ public sealed class NpcArchetypeDefinition : IGameDefinition
 
     public string Description { get; init; } = string.Empty;
 
+    public float SpawnWeight { get; init; } = 1f;
+
+    public List<NpcShipOptionDefinition> ShipOptions { get; init; } = [];
+
+    public NpcLongRangeDefinition StartingCredits { get; init; } = new();
+
+    public NpcFloatRangeDefinition StartingFuelRatio { get; init; } = new()
+    {
+        Min = 1f,
+        Max = 1f
+    };
+
+    public NpcFloatRangeDefinition StartingHullCondition { get; init; } = new()
+    {
+        Min = 1f,
+        Max = 1f
+    };
+
+    public Dictionary<string, NpcFloatRangeDefinition> PersonalityTraits
+    { get; init; } = new(StringComparer.Ordinal);
+}
+
+public sealed class NpcShipOptionDefinition
+{
     public string ShipDefinitionId { get; init; } = string.Empty;
 
-    public long StartingCredits { get; init; }
+    public float Weight { get; init; } = 1f;
+}
 
-    public float StartingFuelRatio { get; init; } = 1.0f;
+public sealed class NpcLongRangeDefinition
+{
+    public long Min { get; init; }
 
-    public float StartingHullCondition { get; init; } = 1.0f;
+    public long Max { get; init; }
+}
 
-    public Dictionary<string, float> PersonalityTraits { get; init; }
-        = new(StringComparer.Ordinal);
+public sealed class NpcFloatRangeDefinition
+{
+    public float Min { get; init; }
+
+    public float Max { get; init; }
 }

@@ -213,7 +213,13 @@ internal sealed class GameMain : EngineGame
 
         _gameFont = _hostContext.Graphics.Fonts.Create(
             fontData,
-            new FontDescription(24));
+            new FontDescription(24)
+            {
+                AdditionalCodepointRanges =
+                [
+                    new FontCodepointRange(0x0400, 0x0100)
+                ]
+            });
 
         var uiTheme = new UiTheme
         {
@@ -965,6 +971,7 @@ internal sealed class GameMain : EngineGame
         {
             GalaxyMapRenderer.Draw(
                 Runtime,
+                _gameFont,
                 _session.World.Galaxy,
                 _session.World.CurrentSystemId,
                 _session.Player.GalaxyNavigation,

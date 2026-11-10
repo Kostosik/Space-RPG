@@ -1,6 +1,8 @@
 ﻿using Engine.Core.Math;
 using Engine.Graphics.Commands;
 using Engine.Graphics.DebugGraphics;
+using Engine.Graphics.Fonts;
+using Engine.Graphics.Rendering;
 using Engine.Runtime;
 using GameProject.Player;
 using GameProject.World;
@@ -15,6 +17,7 @@ internal static class GalaxyMapRenderer
 
     public static void Draw(
         EngineRuntime runtime,
+        FontHandle font,
         GalaxyMap galaxy,
         string currentSystemId,
         GalaxyNavigationState navigation,
@@ -36,20 +39,20 @@ internal static class GalaxyMapRenderer
                 new UiColor(5, 9, 22, 235)));
 
         DrawText(
-            runtime,
+            runtime, font,
             "GALACTIC NAVIGATION",
             new Vector2(35, 30),
             new DebugColor(100, 200, 255),
             3.0f);
 
         DrawText(
-            runtime,
+            runtime, font,
             $"FUEL: {navigation.Fuel}/{navigation.FuelCapacity}",
             new Vector2(35, 80),
             DebugColor.White);
 
         DrawText(
-            runtime,
+            runtime, font,
             $"CURRENT SYSTEM: {currentSystemId.ToUpperInvariant()}",
             new Vector2(35, 110),
             DebugColor.Green);
@@ -112,7 +115,7 @@ internal static class GalaxyMapRenderer
             if (galaxy.Systems.Count <= 30 || isCurrent || isSelected)
             {
                 DrawText(
-                    runtime,
+                    runtime, font,
                     system.Name,
                     new Vector2(
                         position.X + 16,
@@ -137,14 +140,14 @@ internal static class GalaxyMapRenderer
                     DebugRenderSpace.Screen));
 
             DrawText(
-                runtime,
+                runtime, font,
                 "SYSTEM INFORMATION",
                 panelPosition,
                 new DebugColor(100, 200, 255),
                 2.0f);
 
             DrawText(
-                runtime,
+                runtime, font,
                 selected.Name,
                 new Vector2(900, 230),
                 DebugColor.White,
@@ -155,7 +158,7 @@ internal static class GalaxyMapRenderer
                 selected.Id);
 
             DrawText(
-                runtime,
+                runtime, font,
                 isConnected
                     ? "HYPERSPACE: AVAILABLE"
                     : "HYPERSPACE: UNAVAILABLE",
@@ -165,19 +168,19 @@ internal static class GalaxyMapRenderer
                     : DebugColor.Red);
 
             DrawText(
-                runtime,
+                runtime, font,
                 $"JUMP COST: {jumpFuelCost} FUEL",
                 new Vector2(900, 320),
                 DebugColor.White);
 
             DrawText(
-                runtime,
+                runtime, font,
                 $"REMAINING: {navigation.Fuel} FUEL",
                 new Vector2(900, 350),
                 DebugColor.White);
 
             DrawText(
-                runtime,
+                runtime, font,
                 selected.Id == currentSystemId
                     ? "CURRENT LOCATION"
                     : isConnected && navigation.Fuel >= jumpFuelCost
@@ -188,13 +191,13 @@ internal static class GalaxyMapRenderer
         }
 
         DrawText(
-            runtime,
+            runtime, font,
             message,
             new Vector2(35, 640),
             new DebugColor(100, 220, 255));
 
         DrawText(
-            runtime,
+            runtime,font,
             "M - CLOSE MAP    LEFT CLICK - SELECT    ENTER - HYPERSPACE JUMP",
             new Vector2(35, 675),
             DebugColor.White,
@@ -246,19 +249,25 @@ internal static class GalaxyMapRenderer
     }
 
     private static void DrawText(
-        EngineRuntime runtime,
-        string text,
-        Vector2 position,
-        DebugColor color,
-        float scale = 2.0f)
+    EngineRuntime runtime,
+    FontHandle font,
+    string text,
+    Vector2 position,
+    DebugColor color,
+    float scale = 2.0f)
     {
         runtime.Services.Graphics.Submit(
-            new DrawDebugTextCommand(
+            new DrawUiTextCommand(
                 text,
+                font,
                 position,
-                color,
-                scale,
-                DebugRenderSpace.Screen));
+                scale * 8.0f,
+                new UiColor(
+                    color.R,
+                    color.G,
+                    color.B,
+                    color.A),
+                RenderLayers.DebugText));
     }
 
     private static void DrawCircle(

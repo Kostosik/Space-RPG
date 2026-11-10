@@ -2,14 +2,41 @@
   "id": "trader",
   "name": "Trader",
   "description": "Independent commercial pilot.",
-  "shipDefinitionId": "starter_scout",
-  "startingCredits": 1200,
-  "startingFuelRatio": 0.9,
-  "startingHullCondition": 1.0,
+  "spawnWeight": 3.0,
+  "shipOptions": [
+    {
+      "shipDefinitionId": "starter_scout",
+      "weight": 1.0
+    }
+  ],
+  "startingCredits": {
+    "min": 900,
+    "max": 1800
+  },
+  "startingFuelRatio": {
+    "min": 0.75,
+    "max": 1.0
+  },
+  "startingHullCondition": {
+    "min": 0.75,
+    "max": 1.0
+  },
   "personalityTraits": {
-    "greed": 0.75,
-    "caution": 0.8,
-    "curiosity": 0.25,
-    "aggression": 0.1
+    "greed": {
+      "min": 0.65,
+      "max": 0.95
+    },
+    "caution": {
+      "min": 0.65,
+      "max": 0.95
+    },
+    "curiosity": {
+      "min": 0.1,
+      "max": 0.4
+    },
+    "aggression": {
+      "min": 0.05,
+      "max": 0.25
+    }
   }
 }
