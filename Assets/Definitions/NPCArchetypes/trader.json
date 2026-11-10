@@ -1,0 +1,15 @@
+﻿{
+  "id": "trader",
+  "name": "Trader",
+  "description": "Independent commercial pilot.",
+  "shipDefinitionId": "starter_scout",
+  "startingCredits": 1200,
+  "startingFuelRatio": 0.9,
+  "startingHullCondition": 1.0,
+  "personalityTraits": {
+    "greed": 0.75,
+    "caution": 0.8,
+    "curiosity": 0.25,
+    "aggression": 0.1
+  }
+}

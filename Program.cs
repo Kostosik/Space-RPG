@@ -5,6 +5,7 @@ using Engine.Serialization.Content;
 using Engine.Serialization.UI;
 using Engine.UI.Assets;
 using GameProject.Content;
+using GameProject.NPC;
 using GameProject.Player;
 using GameProject.Ships;
 using GameProject.Shops;
@@ -107,6 +108,11 @@ internal static class Program
                                 new JsonGameDefinitionContentLoader<ShopDefinition>(
                                     new DefinitionAssetFilter(
                                         "Definitions/Shops",
+                                        ".json")));
+                            loaders.Register(
+                                new JsonGameDefinitionContentLoader<NpcArchetypeDefinition>(
+                                    new DefinitionAssetFilter(
+                                        "Definitions/NPCArchetypes",
                                         ".json")));
                         },
                         InputActions = inputActions,

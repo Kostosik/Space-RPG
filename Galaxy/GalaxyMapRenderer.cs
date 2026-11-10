@@ -27,7 +27,7 @@ internal static class GalaxyMapRenderer
         ArgumentNullException.ThrowIfNull(navigation);
 
         var graphics = runtime.Services.Graphics;
-
+        var mapScaleFactor = GetMapScaleFactor(galaxy);
         // Затемняем игровой мир.
         graphics.Submit(
             new DrawUiRectangleCommand(
@@ -57,7 +57,7 @@ internal static class GalaxyMapRenderer
         // Линии гиперпереходов.
         foreach (var system in galaxy.Systems)
         {
-            var start = GetScreenPosition(system);
+            var start = GetScreenPosition(system, mapScaleFactor);
 
             foreach (var connectionId in system.Connections)
             {
@@ -73,7 +73,7 @@ internal static class GalaxyMapRenderer
                 if (connected is null)
                     continue;
 
-                var end = GetScreenPosition(connected);
+                var end = GetScreenPosition(connected, mapScaleFactor);
 
                 graphics.Submit(
                     new DrawDebugLineCommand(
@@ -87,7 +87,7 @@ internal static class GalaxyMapRenderer
         // Звёздные системы.
         foreach (var system in galaxy.Systems)
         {
-            var position = GetScreenPosition(system);
+            var position = GetScreenPosition(system, mapScaleFactor);
 
             var isCurrent =
                 system.Id == currentSystemId;
@@ -104,17 +104,22 @@ internal static class GalaxyMapRenderer
             DrawCircle(
                 runtime,
                 position,
-                isSelected ? 13.0f : 8.0f,
+                MathF.Max(
+                    3.0f,
+                    (isSelected ? 13.0f : 8.0f) * mapScaleFactor),
                 color);
 
-            DrawText(
-                runtime,
-                system.Name,
-                new Vector2(
-                    position.X + 16,
-                    position.Y - 7),
-                color,
-                1.5f);
+            if (galaxy.Systems.Count <= 30 || isCurrent || isSelected)
+            {
+                DrawText(
+                    runtime,
+                    system.Name,
+                    new Vector2(
+                        position.X + 16,
+                        position.Y - 7),
+                    color,
+                    1.5f);
+            }
         }
 
         // Информация о выбранной системе.
@@ -201,27 +206,43 @@ internal static class GalaxyMapRenderer
         Vector2 mousePosition)
     {
         ArgumentNullException.ThrowIfNull(galaxy);
-
+        var mapScaleFactor = GetMapScaleFactor(galaxy);
         foreach (var system in galaxy.Systems)
         {
-            var position = GetScreenPosition(system);
+            var position = GetScreenPosition(
+                system,
+                mapScaleFactor);
 
             var dx = mousePosition.X - position.X;
             var dy = mousePosition.Y - position.Y;
 
-            if (dx * dx + dy * dy <= 18.0f * 18.0f)
+            var hitRadius = MathF.Max(
+                6.0f,
+                18.0f * mapScaleFactor);
+
+            if (dx * dx + dy * dy <= hitRadius * hitRadius)
                 return system;
         }
 
         return null;
     }
 
-    private static Vector2 GetScreenPosition(
-        GalaxySystem system)
+    private static float GetMapScaleFactor(GalaxyMap galaxy)
     {
+        return MathF.Sqrt(
+            (float)GalaxyGenerator.DefaultSystemCount /
+            Math.Max(1, galaxy.Systems.Count));
+    }
+
+    private static Vector2 GetScreenPosition(
+        GalaxySystem system,
+        float scaleFactor)
+    {
+        var mapScale = MapScale * scaleFactor;
+
         return new Vector2(
-            MapCenterX + system.MapX * MapScale,
-            MapCenterY + system.MapY * MapScale);
+            MapCenterX + system.MapX * mapScale,
+            MapCenterY + system.MapY * mapScale);
     }
 
     private static void DrawText(

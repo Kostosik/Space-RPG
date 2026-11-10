@@ -12,8 +12,6 @@ public sealed class MainMenuScene : IScene<GameSceneContext>
     private GameSceneContext? _context;
     private Action<IScene<GameSceneContext>>? _requestScene;
 
-    private bool _showSettings;
-
     public void Initialize(
         GameSceneContext context,
         Action<IScene<GameSceneContext>> requestScene)
@@ -36,19 +34,7 @@ public sealed class MainMenuScene : IScene<GameSceneContext>
 
         var position = pointer.Position;
 
-        if (_showSettings)
-        {
-            // BACK.
-            if (position.X >= 500 &&
-                position.X <= 780 &&
-                position.Y >= 530 &&
-                position.Y <= 600)
-            {
-                _showSettings = false;
-            }
 
-            return;
-        }
 
         // START GAME.
         if (position.X >= 500 &&
@@ -59,14 +45,13 @@ public sealed class MainMenuScene : IScene<GameSceneContext>
             _requestScene?.Invoke(new GameplayScene());
             return;
         }
-
         // SETTINGS.
         if (position.X >= 500 &&
             position.X <= 780 &&
             position.Y >= 475 &&
             position.Y <= 545)
         {
-            _showSettings = true;
+            _context?.OpenSettings();
             return;
         }
 
@@ -98,11 +83,7 @@ public sealed class MainMenuScene : IScene<GameSceneContext>
                 new Vector2(600, 500),
                 new UiColor(10, 23, 43, 245)));
 
-        if (_showSettings)
-        {
-            RenderSettings();
-            return;
-        }
+
 
         DrawText(
             "SPACE-RPG",
@@ -137,33 +118,6 @@ public sealed class MainMenuScene : IScene<GameSceneContext>
             new DebugColor(120, 160, 190),
             1.3f);
     }
-
-    private void RenderSettings()
-    {
-        DrawText(
-            "SETTINGS",
-            new Vector2(490, 240),
-            new DebugColor(100, 210, 255),
-            3.0f);
-
-        DrawText(
-            "GAME SETTINGS",
-            new Vector2(510, 340),
-            DebugColor.White,
-            1.6f);
-
-        DrawText(
-            "OPTIONS WILL BE CONFIGURED HERE",
-            new Vector2(420, 410),
-            new DebugColor(150, 175, 195),
-            1.2f);
-
-        DrawButton(
-            "BACK",
-            530,
-            new UiColor(35, 75, 105, 255));
-    }
-
     private void DrawButton(
         string text,
         float y,

@@ -1,0 +1,15 @@
+﻿{
+  "id": "explorer",
+  "name": "Explorer",
+  "description": "Independent space explorer.",
+  "shipDefinitionId": "starter_scout",
+  "startingCredits": 600,
+  "startingFuelRatio": 1.0,
+  "startingHullCondition": 1.0,
+  "personalityTraits": {
+    "greed": 0.25,
+    "caution": 0.4,
+    "curiosity": 0.95,
+    "aggression": 0.15
+  }
+}

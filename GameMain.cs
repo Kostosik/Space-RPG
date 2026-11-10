@@ -19,9 +19,11 @@ using GameProject.Galaxy;
 using GameProject.Game;
 using GameProject.Game.Scenes;
 using GameProject.Player;
+using GameProject.Settings;
 using GameProject.Ships;
 using GameProject.Simulation;
 using GameProject.UI;
+using GameProject.UI.Settings;
 using GameProject.UI.Ship;
 using GameProject.World;
 
@@ -32,6 +34,8 @@ internal sealed class GameMain : EngineGame
     private readonly DesktopGameHostContext _hostContext;
 
     private UiSystem? _ui;
+    private readonly GameSettings _settings = new();
+    private SettingsWindow? _settingsWindow;
     private FontHandle _gameFont = FontHandle.Invalid;
     private string? _pendingGalaxyJumpTargetSystemId;
     private bool _galaxyJumpRouteCompleted;
@@ -184,7 +188,8 @@ internal sealed class GameMain : EngineGame
 
     protected override void OnInitialize()
     {
-        _session = GameSession.CreateNew();
+        _session = GameSession.CreateNew(
+                WorldStartData.CreateNew(100));
 
         if (_starterShipDefinition is null)
         {
@@ -226,6 +231,27 @@ internal sealed class GameMain : EngineGame
 
         _hostContext.Resized += OnWindowResized;
         _shipWindow = new ShipWindow(_ui);
+
+        // Синхронизируем начальные настройки с текущим окном.
+        _settings.Display.Width = _hostContext.WindowWidth;
+        _settings.Display.Height = _hostContext.WindowHeight;
+        _settings.Display.Fullscreen = _hostContext.IsFullscreen;
+
+        // Создаём презентационный слой настроек.
+        var settingsPresenter = new SettingsPresenter(
+            _settings,
+            display => _hostContext.ApplyWindowSettings(
+                display.Width,
+                display.Height,
+                display.Fullscreen,
+                display.VSync));
+
+        // Создаём отдельное окно настроек.
+        _settingsWindow = new SettingsWindow(
+            _ui,
+            settingsPresenter);
+
+
         _shipWindow.Closed += OnShipWindowClosed;
         InitializeStarterLoadout(playerShip);
 
@@ -316,6 +342,7 @@ internal sealed class GameMain : EngineGame
             drawLandingScreen: DrawPlanetScreen,
 
             takeOffFromPlanet: TakeOffFromPlanet,
+            openSettings: () => _settingsWindow?.Show(),
             exitGame: _hostContext.Close
         );
 
@@ -329,7 +356,14 @@ internal sealed class GameMain : EngineGame
 
     protected override void OnUpdate(TimeSnapshot time)
     {
+        var settingsWasOpen = _settingsWindow?.IsOpen == true;
+
         _ui?.Update(time.Delta.TotalSeconds);
+
+        // Не передаём текущий клик главному меню,
+        // если в начале кадра было открыто окно настроек.
+        if (settingsWasOpen)
+            return;
 
         _sceneManager?.Update(time);
     }
@@ -558,8 +592,11 @@ internal sealed class GameMain : EngineGame
 
     private void DrawPlanetTooltip()
     {
-        if (_hoveredPlanet is null)
+        if (!_settings.Gameplay.ShowPlanetTooltips ||
+            _hoveredPlanet is null)
+        {
             return;
+        }
 
         if ((DateTime.UtcNow - _planetHoverStartedAt).TotalSeconds
             < PlanetHoverDelaySeconds)
@@ -1333,7 +1370,8 @@ internal sealed class GameMain : EngineGame
         _sceneManager = null;
 
         _hostContext.Resized -= OnWindowResized;
-
+        _settingsWindow?.Dispose();
+        _settingsWindow = null;
         _ui?.Screens.Clear();
         _ui?.ClearOverlays();
         _ui = null;

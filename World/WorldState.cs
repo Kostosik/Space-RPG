@@ -1,10 +1,12 @@
-﻿using System;
+﻿using GameProject.NPC;
+using System;
 using System.Collections.Generic;
 
 namespace GameProject.World;
 
 public sealed class WorldState
 {
+    public NpcRegistry Npcs { get; } = new();
     private sealed class LocalStarSystemState
     {
         public LocalStarSystemState(StarSystem starSystem)
@@ -48,7 +50,7 @@ public sealed class WorldState
 
     private long _completedDayNumber;
 
-    private WorldState(Guid id, int seed)
+    private WorldState(Guid id, WorldStartData startData)
     {
         if (id == Guid.Empty)
         {
@@ -58,9 +60,11 @@ public sealed class WorldState
         }
 
         Id = id;
-        Seed = seed;
+        Seed = startData.Seed;
 
-        Galaxy = GalaxyGenerator.Generate(seed);
+        Galaxy = GalaxyGenerator.Generate(
+            startData.Seed,
+            startData.GalaxySystemCount);
 
         // Глобальное состояние создаётся для каждой системы.
         foreach (var system in Galaxy.Systems)
@@ -214,7 +218,7 @@ public sealed class WorldState
     {
         return new WorldState(
             Guid.NewGuid(),
-            startData.Seed);
+            startData);
     }
 
     public static WorldState CreateNew()

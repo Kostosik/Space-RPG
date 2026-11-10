@@ -14,6 +14,7 @@ public sealed class GameSceneContext
         Action<double> renderGameplay,
         Action drawLandingScreen,
         Action takeOffFromPlanet,
+        Action openSettings,
         Action exitGame)
     {
         Runtime = runtime;
@@ -24,8 +25,9 @@ public sealed class GameSceneContext
         RenderGameplay = renderGameplay;
         DrawLandingScreen = drawLandingScreen;
         TakeOffFromPlanet = takeOffFromPlanet;
+        OpenSettings = openSettings;
     }
-
+    internal Action OpenSettings { get; }
     public EngineRuntime Runtime { get; }
     internal Action ExitGame { get; }
     public IPointerInput? PointerInput { get; }

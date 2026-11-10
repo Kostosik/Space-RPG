@@ -1,66 +1,125 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace GameProject.World;
 
 public static class GalaxyGenerator
 {
-    private const float MapMinX = -600.0f;
-    private const float MapMaxX = 380.0f;
-    private const float MapMinY = -420.0f;
-    private const float MapMaxY = 420.0f;
+    public const int DefaultSystemCount = 20;
+
+    private const float BaseMapMinX = -600.0f;
+    private const float BaseMapMaxX = 380.0f;
+    private const float BaseMapMinY = -420.0f;
+    private const float BaseMapMaxY = 420.0f;
 
     private const float MinSystemDistance = 95.0f;
     private const int MaxPositionAttempts = 20000;
 
-    private const int ExtraConnectionsCount = 10;
     private const int MaxConnectionsPerSystem = 4;
 
-    private static readonly (string Id, string Name)[] SystemDefinitions =
+    private static readonly string[] NamePrefixes =
     [
-        ("sol", "Солнечная система"),
-        ("alpha", "Альфа Центавра"),
-        ("vega", "Вега"),
-        ("sirius", "Сириус"),
-        ("proxima", "Проксима"),
-        ("kepler", "Кеплер"),
-        ("arcturus", "Арктур"),
-        ("rigel", "Ригель"),
-        ("betelgeuse", "Бетельгейзе"),
-        ("canopus", "Канопус"),
-        ("altair", "Альтаир"),
-        ("deneb", "Денеб"),
-        ("antares", "Антарес"),
-        ("castor", "Кастор"),
-        ("pollux", "Поллукс"),
-        ("tau-ceti", "Тау Кита"),
-        ("epsilon-eridani", "Эпсилон Эридана"),
-        ("procyon", "Процион"),
-        ("barnard", "Звезда Барнарда"),
-        ("wolf-359", "Вольф 359")
+        "Альфа",
+        "Бета",
+        "Гамма",
+        "Дельта",
+        "Эпсилон",
+        "Зета",
+        "Эта",
+        "Тета",
+        "Йота",
+        "Каппа",
+        "Лямбда",
+        "Мю",
+        "Ню",
+        "Кси",
+        "Омикрон",
+        "Пи"
     ];
 
-    public static GalaxyMap Generate(int worldSeed)
+    private static readonly string[] ConstellationNames =
+    [
+        "Центавра",
+        "Лиры",
+        "Кита",
+        "Эридана",
+        "Ориона",
+        "Дракона",
+        "Лебедя",
+        "Кассиопеи",
+        "Пегаса",
+        "Феникса",
+        "Гидры",
+        "Волопаса",
+        "Андромеды",
+        "Геркулеса",
+        "Персея",
+        "Жертвенника"
+    ];
+
+    private readonly record struct MapBounds(
+        float MinX,
+        float MaxX,
+        float MinY,
+        float MaxY);
+
+    public static GalaxyMap Generate(
+        int worldSeed,
+        int systemCount = DefaultSystemCount)
     {
-        var random = new Random(worldSeed);
+        if (systemCount <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(systemCount),
+                "Galaxy must contain at least one system.");
+        }
+
+        var layoutScale = MathF.Sqrt(
+            (float)systemCount / DefaultSystemCount);
+
+        var bounds = new MapBounds(
+            BaseMapMinX * layoutScale,
+            BaseMapMaxX * layoutScale,
+            BaseMapMinY * layoutScale,
+            BaseMapMaxY * layoutScale);
+
+        var positionRandom = new Random(worldSeed);
         var galaxy = new GalaxyMap();
 
-        var systems = new GalaxySystem[SystemDefinitions.Length];
+        var systems = new GalaxySystem[systemCount];
+
+        var usedNames = new HashSet<string>(
+            StringComparer.OrdinalIgnoreCase);
+
+        usedNames.Add("Солнечная система");
 
         for (var i = 0; i < systems.Length; i++)
         {
-            var definition = SystemDefinitions[i];
-
             var position = i == 0
                 ? (X: 0.0f, Y: 0.0f)
-                : GeneratePosition(random, systems, i);
+                : GeneratePosition(
+                    positionRandom,
+                    systems,
+                    i,
+                    bounds);
 
+            var id = i == 0
+                ? "sol"
+                : $"system-{i:D3}";
+
+            var name = i == 0
+                ? "Солнечная система"
+                : GenerateSystemName(
+                    worldSeed,
+                    i,
+                    usedNames);
+
+            // Seed системы зависит от Seed галактики и её индекса.
             var systemSeed = unchecked(worldSeed + i + 1);
 
             var system = new GalaxySystem(
-                definition.Id,
-                definition.Name,
+                id,
+                name,
                 position.X,
                 position.Y,
                 systemSeed);
@@ -75,18 +134,60 @@ public static class GalaxyGenerator
         return galaxy;
     }
 
+    private static string GenerateSystemName(
+        int worldSeed,
+        int systemIndex,
+        HashSet<string> usedNames)
+    {
+        var nameSeed = unchecked(
+            worldSeed * 397 ^
+            systemIndex * 7919 ^
+            0x5F3759DF);
+
+        var random = new Random(nameSeed);
+
+        // Повторяем попытки, пока не получим уникальное имя.
+        for (var attempt = 0; attempt < 64; attempt++)
+        {
+            var prefix = NamePrefixes[
+                random.Next(NamePrefixes.Length)];
+
+            var constellation = ConstellationNames[
+                random.Next(ConstellationNames.Length)];
+
+            var candidate = $"{prefix} {constellation}";
+
+            if (usedNames.Add(candidate))
+                return candidate;
+        }
+
+        // Гарантированно уникальное резервное имя.
+        var fallback = $"Система {systemIndex:D3}";
+        usedNames.Add(fallback);
+
+        return fallback;
+    }
+
     private static (float X, float Y) GeneratePosition(
         Random random,
         GalaxySystem[] systems,
-        int count)
+        int count,
+        MapBounds bounds)
     {
-        for (var attempt = 0; attempt < MaxPositionAttempts; attempt++)
-        {
-            var x = MapMinX +
-                    random.NextSingle() * (MapMaxX - MapMinX);
+        var minDistanceSquared =
+            MinSystemDistance * MinSystemDistance;
 
-            var y = MapMinY +
-                    random.NextSingle() * (MapMaxY - MapMinY);
+        for (var attempt = 0;
+             attempt < MaxPositionAttempts;
+             attempt++)
+        {
+            var x = bounds.MinX +
+                    random.NextSingle() *
+                    (bounds.MaxX - bounds.MinX);
+
+            var y = bounds.MinY +
+                    random.NextSingle() *
+                    (bounds.MaxY - bounds.MinY);
 
             var valid = true;
 
@@ -95,8 +196,7 @@ public static class GalaxyGenerator
                 var dx = x - systems[i].MapX;
                 var dy = y - systems[i].MapY;
 
-                if (dx * dx + dy * dy <
-                    MinSystemDistance * MinSystemDistance)
+                if (dx * dx + dy * dy < minDistanceSquared)
                 {
                     valid = false;
                     break;
@@ -108,56 +208,81 @@ public static class GalaxyGenerator
         }
 
         throw new InvalidOperationException(
-            "Unable to generate a valid galaxy layout.");
+            $"Unable to generate a valid galaxy layout for {systems.Length} systems.");
     }
 
     private static void ConnectMinimumSpanningTree(
         GalaxyMap galaxy,
         GalaxySystem[] systems)
     {
-        var connected = new bool[systems.Length];
-        connected[0] = true;
+        var count = systems.Length;
 
-        for (var edge = 0; edge < systems.Length - 1; edge++)
+        if (count <= 1)
+            return;
+
+        var connected = new bool[count];
+        var bestDistances = new double[count];
+        var nearestSystems = new int[count];
+
+        for (var i = 0; i < count; i++)
         {
-            var bestFrom = -1;
-            var bestTo = -1;
-            var bestDistance = double.PositiveInfinity;
+            bestDistances[i] = double.PositiveInfinity;
+            nearestSystems[i] = -1;
+        }
 
-            for (var from = 0; from < systems.Length; from++)
+        bestDistances[0] = 0.0;
+
+        // Алгоритм Прима: гарантированно связывает все системы.
+        // Сложность O(n²), без полного перебора дерева на каждом шаге.
+        for (var step = 0; step < count; step++)
+        {
+            var current = -1;
+            var currentBestDistance = double.PositiveInfinity;
+
+            for (var i = 0; i < count; i++)
             {
-                if (!connected[from])
+                if (connected[i])
                     continue;
 
-                for (var to = 0; to < systems.Length; to++)
-                {
-                    if (connected[to])
-                        continue;
+                if (bestDistances[i] >= currentBestDistance)
+                    continue;
 
-                    var distance = GetDistanceSquared(
-                        systems[from],
-                        systems[to]);
-
-                    if (distance >= bestDistance)
-                        continue;
-
-                    bestDistance = distance;
-                    bestFrom = from;
-                    bestTo = to;
-                }
+                current = i;
+                currentBestDistance = bestDistances[i];
             }
 
-            if (bestFrom < 0 || bestTo < 0)
+            if (current < 0)
             {
                 throw new InvalidOperationException(
                     "Unable to connect all galaxy systems.");
             }
 
-            galaxy.Connect(
-                systems[bestFrom].Id,
-                systems[bestTo].Id);
+            connected[current] = true;
 
-            connected[bestTo] = true;
+            if (nearestSystems[current] >= 0)
+            {
+                galaxy.Connect(
+                    systems[nearestSystems[current]].Id,
+                    systems[current].Id);
+            }
+
+            for (var candidate = 0;
+                 candidate < count;
+                 candidate++)
+            {
+                if (connected[candidate])
+                    continue;
+
+                var distance = GetDistanceSquared(
+                    systems[current],
+                    systems[candidate]);
+
+                if (distance >= bestDistances[candidate])
+                    continue;
+
+                bestDistances[candidate] = distance;
+                nearestSystems[candidate] = current;
+            }
         }
     }
 
@@ -174,8 +299,12 @@ public static class GalaxyGenerator
                  second < systems.Length;
                  second++)
             {
-                if (HasConnection(systems[first], systems[second].Id))
+                if (HasConnection(
+                        systems[first],
+                        systems[second].Id))
+                {
                     continue;
+                }
 
                 candidates.Add((
                     first,
@@ -201,11 +330,13 @@ public static class GalaxyGenerator
                 : a.Second.CompareTo(b.Second);
         });
 
+        // Число дополнительных связей растёт вместе с галактикой.
+        var targetExtraConnections = systems.Length / 2;
         var addedConnections = 0;
 
         foreach (var candidate in candidates)
         {
-            if (addedConnections >= ExtraConnectionsCount)
+            if (addedConnections >= targetExtraConnections)
                 break;
 
             var first = systems[candidate.First];
