@@ -193,7 +193,7 @@
       <HintPath>Engine\System.Text.Json.dll</HintPath>
       <Private>true</Private>
     </Reference>
-  </ItemGroup>
+  <Reference Include="Engine.AI"><HintPath>Engine\Engine.AI.dll</HintPath><Private>true</Private></Reference></ItemGroup>
 
   <ItemGroup>
     <None Update="Engine\glfw3.dll">

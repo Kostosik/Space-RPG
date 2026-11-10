@@ -1,50 +1,88 @@
-﻿
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace GameProject.World;
 
 public sealed class WorldState
 {
-    private sealed class StarSystemState
+    private sealed class LocalStarSystemState
     {
-        public StarSystemState(StarSystem starSystem)
+        public LocalStarSystemState(StarSystem starSystem)
         {
+            ArgumentNullException.ThrowIfNull(starSystem);
+
             StarSystem = starSystem;
         }
 
         public StarSystem StarSystem { get; }
 
-        public TimeSpan LastSimulatedAt { get; set; }
+        public TimeSpan LastSimulatedAt { get; private set; }
+
+        public void AdvanceTo(TimeSpan targetTime)
+        {
+            if (targetTime < LastSimulatedAt)
+            {
+                throw new InvalidOperationException(
+                    "Local system time cannot move backwards.");
+            }
+
+            var elapsed = targetTime - LastSimulatedAt;
+
+            if (elapsed <= TimeSpan.Zero)
+                return;
+
+            StarSystem.AdvanceOrbit(elapsed.TotalDays);
+            LastSimulatedAt = targetTime;
+        }
     }
 
-    private readonly Dictionary<string, StarSystemState> _starSystems =
+    private readonly Dictionary<string, GalaxySystemState> _systemStates =
         new(StringComparer.OrdinalIgnoreCase);
 
-    private TimeSpan _worldElapsedTime;
+    private readonly Dictionary<string, LocalStarSystemState> _localSystemStates =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private string _currentSystemId = string.Empty;
+
+    private TimeSpan _elapsedWorldTime;
+
+    private long _completedDayNumber;
 
     private WorldState(Guid id, int seed)
     {
         if (id == Guid.Empty)
+        {
             throw new ArgumentException(
                 "World ID cannot be empty.",
                 nameof(id));
+        }
 
         Id = id;
         Seed = seed;
 
         Galaxy = GalaxyGenerator.Generate(seed);
 
+        // Глобальное состояние создаётся для каждой системы.
+        foreach (var system in Galaxy.Systems)
+        {
+            _systemStates.Add(
+                system.Id,
+                new GalaxySystemState(system));
+        }
+
         var startingSystem = Galaxy.GetSystem("sol")
             ?? throw new InvalidOperationException(
                 "Starting galaxy system was not generated.");
 
-        _starSystems.Add(
-            startingSystem.Id,
-            new StarSystemState(
-                StarSystemGenerator.Generate(startingSystem.Seed)));
+        // Локальное представление создаётся только для стартовой системы.
+        _currentSystemId = startingSystem.Id;
 
-        CurrentSystemId = startingSystem.Id;
+        _localSystemStates.Add(
+            startingSystem.Id,
+            new LocalStarSystemState(
+                StarSystemGenerator.Generate(
+                    startingSystem.Id,
+                    startingSystem.Seed)));
     }
 
     public Guid Id { get; }
@@ -53,38 +91,82 @@ public sealed class WorldState
 
     public GalaxyMap Galaxy { get; }
 
-    public string CurrentSystemId { get; private set; }
+    public string CurrentSystemId => _currentSystemId;
 
+    // Подробное представление активной системы.
     public StarSystem StarSystem =>
-        _starSystems[CurrentSystemId].StarSystem;
+        _localSystemStates[_currentSystemId].StarSystem;
 
-    public int VisitedSystemCount => _starSystems.Count;
+    // Глобальное состояние всех систем галактики.
+    public IReadOnlyDictionary<string, GalaxySystemState> SystemStates =>
+        _systemStates;
 
-    /// <summary>
-    /// Advances the active system to the specified global game time.
-    /// Inactive systems are updated lazily when entered.
-    /// </summary>
-    public void AdvanceSimulationTo(TimeSpan elapsedWorldTime)
+    public int SystemCount => _systemStates.Count;
+
+    // Число систем, для которых создано локальное представление.
+    public int VisitedSystemCount => _localSystemStates.Count;
+
+    public long CompletedDayNumber => _completedDayNumber;
+
+    public TimeSpan ElapsedWorldTime => _elapsedWorldTime;
+
+    public GalaxySystemState? GetSystemState(string systemId)
     {
-        if (elapsedWorldTime < TimeSpan.Zero)
+        return _systemStates.TryGetValue(
+            systemId,
+            out var state)
+                ? state
+                : null;
+    }
+
+    internal void AdvanceLocalSimulation(
+        TimeSpan previousElapsed,
+        TimeSpan currentElapsed)
+    {
+        if (previousElapsed != _elapsedWorldTime)
+        {
+            throw new InvalidOperationException(
+                "Game time is out of sync with world time.");
+        }
+
+        if (currentElapsed < previousElapsed)
+        {
             throw new ArgumentOutOfRangeException(
-                nameof(elapsedWorldTime));
+                nameof(currentElapsed));
+        }
 
-        if (elapsedWorldTime < _worldElapsedTime)
-            throw new ArgumentOutOfRangeException(
-                nameof(elapsedWorldTime),
-                "World time cannot move backwards.");
+        // Продвигается только активная локальная система.
+        var currentState = _localSystemStates[_currentSystemId];
 
-        if (elapsedWorldTime == _worldElapsedTime)
-            return;
+        currentState.AdvanceTo(currentElapsed);
 
-        var currentState = _starSystems[CurrentSystemId];
+        _elapsedWorldTime = currentElapsed;
+    }
 
-        AdvanceSystemTo(
-            currentState,
-            elapsedWorldTime);
+    internal void AdvanceGlobalSimulation(
+        long dayNumber,
+        TimeSpan elapsedWorldTime)
+    {
+        if (elapsedWorldTime != _elapsedWorldTime)
+        {
+            throw new InvalidOperationException(
+                "Global simulation time is out of sync with world time.");
+        }
 
-        _worldElapsedTime = elapsedWorldTime;
+        if (dayNumber != _completedDayNumber + 1)
+        {
+            throw new InvalidOperationException(
+                "Global simulation day is out of sequence.");
+        }
+
+        // Обрабатываются все сгенерированные системы,
+        // а не только посещённые игроком.
+        foreach (var systemState in _systemStates.Values)
+        {
+            systemState.AdvanceGlobalDay(dayNumber);
+        }
+
+        _completedDayNumber = dayNumber;
     }
 
     public void EnterSystem(string systemId)
@@ -98,41 +180,34 @@ public sealed class WorldState
                 nameof(systemId));
         }
 
-        if (!_starSystems.TryGetValue(
+        if (string.Equals(
+                _currentSystemId,
                 system.Id,
-                out var state))
+                StringComparison.OrdinalIgnoreCase))
         {
-            state = new StarSystemState(
-                StarSystemGenerator.Generate(system.Seed));
-
-            _starSystems.Add(system.Id, state);
+            return;
         }
 
-        // Восстанавливаем систему относительно глобального времени.
-        AdvanceSystemTo(
-            state,
-            _worldElapsedTime);
-
-        CurrentSystemId = system.Id;
-    }
-
-    private static void AdvanceSystemTo(
-        StarSystemState state,
-        TimeSpan targetTime)
-    {
-        var elapsed = targetTime - state.LastSimulatedAt;
-
-        if (elapsed < TimeSpan.Zero)
-            throw new InvalidOperationException(
-                "System simulation time cannot move backwards.");
-
-        if (elapsed > TimeSpan.Zero)
+        // Если система посещалась, сохраняем её прежний экземпляр.
+        if (!_localSystemStates.TryGetValue(
+                system.Id,
+                out var localState))
         {
-            state.StarSystem.AdvanceOrbit(
-                elapsed.TotalDays);
+            // При первом посещении генерируем локальные объекты.
+            localState = new LocalStarSystemState(
+                StarSystemGenerator.Generate(
+                    system.Id,
+                    system.Seed));
+
+            _localSystemStates.Add(
+                system.Id,
+                localState);
         }
 
-        state.LastSimulatedAt = targetTime;
+        // Учитываем прошедшее время, пока система была неактивна.
+        localState.AdvanceTo(_elapsedWorldTime);
+
+        _currentSystemId = system.Id;
     }
 
     public static WorldState Create(WorldStartData startData)

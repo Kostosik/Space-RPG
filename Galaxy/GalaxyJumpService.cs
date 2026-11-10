@@ -111,11 +111,6 @@ internal static class GalaxyJumpService
         if (!galaxy.CanTravel(current.Id, target.Id))
             return GalaxyJumpResult.NoConnection;
 
-        if (!navigation.TryConsumeFuel(fuelCost))
-        {
-            return GalaxyJumpResult.NotEnoughFuel;
-        }
-
         // Направление движения между звёздными системами.
         var dx = (double)target.MapX - current.MapX;
         var dy = (double)target.MapY - current.MapY;

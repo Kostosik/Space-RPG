@@ -60,7 +60,7 @@ internal sealed class GameMain : EngineGame
     private StarSystemObject? _pendingLandingTransition;
 
     private const int GalaxyJumpFuelCost = 10;
-
+    private WorldSimulation? _worldSimulation;
 
     private readonly string _startupScenePath;
     private readonly IPointerInput? _pointerInput;
@@ -255,8 +255,10 @@ internal sealed class GameMain : EngineGame
         // Один игровой день визуально проходит за 6 секунд.
         gameTime.SetDayDuration(
             TimeSpan.FromSeconds(4));
-        // Подключаем орбиты планет к игровому времени.
-        gameTime.Advanced += OnGameTimeAdvanced;
+        _worldSimulation = new WorldSimulation(
+            _session.World,
+            gameTime);
+
         // Подключаем движение корабля к игровому времени.
         _shipMovementSystem?.AttachGameTime(gameTime);
 
@@ -324,17 +326,6 @@ internal sealed class GameMain : EngineGame
         // Запускаем главное меню.
         _sceneManager.Start(new MainMenuScene());
     }
-
-
-    private void OnGameTimeAdvanced(GameTimeAdvanced advanced)
-    {
-        if (_session is null)
-            return;
-
-        _session.World.AdvanceSimulationTo(
-            advanced.CurrentElapsed.Value);
-    }
-
 
     protected override void OnUpdate(TimeSnapshot time)
     {
@@ -1302,7 +1293,8 @@ internal sealed class GameMain : EngineGame
             _shipWindow.Closed -= OnShipWindowClosed;
             _shipWindow = null;
         }
-
+        _worldSimulation?.Dispose();
+        _worldSimulation = null;
         _turnExecution?.Dispose();
         _turnExecution = null;
         if (_shipMovementSystem is not null)
@@ -1320,7 +1312,6 @@ internal sealed class GameMain : EngineGame
             _session.Player.Ship.EquipmentChanged -= OnPlayerShipEquipmentChanged;
             Console.WriteLine(
                 $"Game session ended: {_session.SessionId}");
-            _session.Simulation.Time.Advanced -= OnGameTimeAdvanced;
             _session = null;
         }
 
