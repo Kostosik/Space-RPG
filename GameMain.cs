@@ -28,8 +28,14 @@ internal sealed class GameMain : EngineGame
     private string _selectedGalaxySystemId = "sol";
     private static readonly AssetPath StarterShipAssetPath =
     new("Definitions/Ships/starter_scout.json");
+    private static readonly AssetPath BasicEngineAssetPath =
+    new("Definitions/Equipment/basic_engine.json");
 
+    private static readonly AssetPath BasicFuelTankAssetPath =
+        new("Definitions/Equipment/basic_fuel_tank.json");
     private ShipDefinition? _starterShipDefinition;
+    private readonly Dictionary<string, EquipmentDefinition>
+    _equipmentDefinitions = new(StringComparer.Ordinal);
     private ShipStats? _starterShipStats;
     private string _galaxyMapMessage =
         "SELECT A STAR SYSTEM";
@@ -98,20 +104,34 @@ internal sealed class GameMain : EngineGame
             ?? throw new InvalidOperationException(
                 "Starter ship definition was not loaded.");
 
-        _starterShipStats = new ShipStatsCalculator()
-            .Calculate(
-                shipDefinition,
-                new PlayerShipState(shipDefinition.Id),
-                new Dictionary<string, EquipmentDefinition>(
-                    StringComparer.Ordinal));
+        // Загружаем определения стартового оборудования.
+        var basicEngine =
+            Runtime.Services.Content.Load<EquipmentDefinition>(
+                BasicEngineAssetPath);
 
-        if (!float.IsFinite(_starterShipStats.MaxSpeed) ||
-            _starterShipStats.MaxSpeed <= 0.0f ||
-            _starterShipStats.FuelCapacity <= 0)
+        var basicFuelTank =
+            Runtime.Services.Content.Load<EquipmentDefinition>(
+                BasicFuelTankAssetPath);
+
+        if (basicEngine.Id != "basic_engine" ||
+            basicFuelTank.Id != "basic_fuel_tank")
         {
             throw new InvalidDataException(
-                "Starter ship contains invalid statistics.");
+                "Starter equipment definitions have unexpected IDs.");
         }
+
+        _equipmentDefinitions.Add(
+            basicEngine.Id,
+            basicEngine);
+
+        _equipmentDefinitions.Add(
+            basicFuelTank.Id,
+            basicFuelTank);
+
+        // Пока создаём ECS-компонент с базовой скоростью корпуса.
+        // Итоговые характеристики рассчитаем после создания GameSession.
+        var initialMaxSpeed =
+            shipDefinition.BaseStats?.MaxSpeed ?? 0.0f;
 
         // Создаём игровой корабль в ECS-мире.
         var ecs = Runtime.EcsWorld;
@@ -124,7 +144,7 @@ internal sealed class GameMain : EngineGame
             {
                 Position = new Vector2(-100.0f, 0.0f),
                 Rotation = 0.0f,
-                MaxSpeed = _starterShipStats.MaxSpeed
+                MaxSpeed = initialMaxSpeed
             });
 
         _shipMovementSystem = new PlayerShipMovementSystem(
@@ -143,20 +163,43 @@ internal sealed class GameMain : EngineGame
     {
         _session = GameSession.CreateNew();
 
-        _session.Player.GalaxyNavigation.SetFuelCapacity(
-            _starterShipStats?.FuelCapacity
-                ?? throw new InvalidOperationException(
-                    "Starter ship statistics were not initialized."));
+        if (_starterShipDefinition is null)
+        {
+            throw new InvalidOperationException(
+                "Starter ship definition was not loaded.");
+        }
 
-        if (_starterShipDefinition is null ||
-    !string.Equals(
-        _session.Player.Ship.ShipDefinitionId,
-        _starterShipDefinition.Id,
-        StringComparison.Ordinal))
+        var playerShip = _session.Player.Ship;
+
+        if (!string.Equals(
+                playerShip.ShipDefinitionId,
+                _starterShipDefinition.Id,
+                StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
                 "Player ship state does not match the loaded ship definition.");
         }
+        // Пересчитываем характеристики с установленным оборудованием.
+        var shipStats = new ShipStatsCalculator().Calculate(
+            _starterShipDefinition,
+            playerShip,
+            _equipmentDefinitions);
+
+        // Обновляем вместимость и полностью заправляем новый корабль.
+        _session.Player.GalaxyNavigation.SetFuelCapacity(
+            shipStats.FuelCapacity);
+
+        _session.Player.GalaxyNavigation.AddFuel(
+            shipStats.FuelCapacity);
+
+        // Применяем скорость к ECS-компоненту.
+        ref var shipComponent =
+            ref Runtime.EcsWorld.Get<PlayerShipComponent>(_shipEntity);
+
+        shipComponent.MaxSpeed = shipStats.MaxSpeed;
+
+        _shipMovementSystem?.SetNavigationObstacles(
+            _session.World.StarSystem.NavigationObstacles);
 
         _shipMovementSystem?.SetNavigationObstacles(
             _session.World.StarSystem.NavigationObstacles);
@@ -989,6 +1032,13 @@ internal sealed class GameMain : EngineGame
 
         if (_starterShipDefinition is not null)
         {
+            Runtime.Services.Content.Unload<EquipmentDefinition>(
+    BasicEngineAssetPath);
+
+            Runtime.Services.Content.Unload<EquipmentDefinition>(
+                BasicFuelTankAssetPath);
+
+            _equipmentDefinitions.Clear();
             Runtime.Services.Content.Unload<ShipDefinition>(
                 StarterShipAssetPath);
 

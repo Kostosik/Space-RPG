@@ -3,6 +3,71 @@
   "name": "Basic Engine",
   "type": "engine",
   "description": "A standard spacecraft engine.",
-  "maxSpeedBonus": 50.0,
-  "fuelCapacityBonus": 0
+  "levels": [
+    {
+      "level": 1,
+      "stats": {
+        "maxSpeedBonus": {
+          "min": 40.0,
+          "max": 60.0
+        },
+        "fuelCapacityBonus": {
+          "min": 0,
+          "max": 0
+        }
+      }
+    },
+    {
+      "level": 2,
+      "stats": {
+        "maxSpeedBonus": {
+          "min": 55.0,
+          "max": 75.0
+        },
+        "fuelCapacityBonus": {
+          "min": 0,
+          "max": 0
+        }
+      }
+    },
+    {
+      "level": 3,
+      "stats": {
+        "maxSpeedBonus": {
+          "min": 70.0,
+          "max": 95.0
+        },
+        "fuelCapacityBonus": {
+          "min": 0,
+          "max": 0
+        }
+      }
+    },
+    {
+      "level": 4,
+      "stats": {
+        "maxSpeedBonus": {
+          "min": 90.0,
+          "max": 120.0
+        },
+        "fuelCapacityBonus": {
+          "min": 0,
+          "max": 0
+        }
+      }
+    },
+    {
+      "level": 5,
+      "stats": {
+        "maxSpeedBonus": {
+          "min": 115.0,
+          "max": 150.0
+        },
+        "fuelCapacityBonus": {
+          "min": 0,
+          "max": 0
+        }
+      }
+    }
+  ]
 }

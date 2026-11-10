@@ -1,8 +1,11 @@
-﻿
-using GameProject.Content;
+﻿using GameProject.Content;
 
 namespace GameProject.Ships;
 
+/// <summary>
+/// Static template of an equipment model.
+/// Multiple individual items can be generated from one definition.
+/// </summary>
 public sealed class EquipmentDefinition : IGameDefinition
 {
     public string Id { get; init; } = string.Empty;
@@ -13,7 +16,5 @@ public sealed class EquipmentDefinition : IGameDefinition
 
     public string Description { get; init; } = string.Empty;
 
-    public float MaxSpeedBonus { get; init; }
-
-    public int FuelCapacityBonus { get; init; }
+    public List<EquipmentLevelDefinition> Levels { get; init; } = [];
 }

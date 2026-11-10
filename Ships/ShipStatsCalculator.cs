@@ -36,7 +36,8 @@ public sealed class ShipStatsCalculator
             StringComparer.Ordinal);
 
         var maxSpeed = definition.BaseStats.MaxSpeed;
-        var fuelCapacity = definition.BaseStats.FuelCapacity;
+
+        long fuelCapacity = definition.BaseStats.FuelCapacity;
 
         foreach (var installed in ship.InstalledEquipment)
         {
@@ -46,12 +47,14 @@ public sealed class ShipStatsCalculator
                     $"Unknown ship slot '{installed.Key}'.");
             }
 
+            var instance = installed.Value;
+
             if (!equipmentDefinitions.TryGetValue(
-                    installed.Value,
+                    instance.DefinitionId,
                     out var equipment))
             {
                 throw new InvalidDataException(
-                    $"Unknown equipment '{installed.Value}'.");
+                    $"Unknown equipment '{instance.DefinitionId}'.");
             }
 
             if (!string.Equals(
@@ -64,19 +67,29 @@ public sealed class ShipStatsCalculator
                     $"with slot '{slot.Id}'.");
             }
 
-            if (!float.IsFinite(equipment.MaxSpeedBonus))
+            if (equipment.Levels is null ||
+                !equipment.Levels.Any(
+                    level => level.Level == instance.Level))
             {
                 throw new InvalidDataException(
-                    $"Equipment '{equipment.Id}' has invalid speed bonus.");
+                    $"Equipment '{equipment.Id}' has an invalid level.");
             }
 
-            maxSpeed += equipment.MaxSpeedBonus;
-            fuelCapacity += equipment.FuelCapacityBonus;
+            if (!float.IsFinite(instance.Stats.MaxSpeedBonus))
+            {
+                throw new InvalidDataException(
+                    $"Equipment instance '{instance.InstanceId}' " +
+                    "has an invalid speed bonus.");
+            }
+
+            maxSpeed += instance.Stats.MaxSpeedBonus;
+            fuelCapacity += instance.Stats.FuelCapacityBonus;
         }
 
         if (!float.IsFinite(maxSpeed) ||
             maxSpeed <= 0.0f ||
-            fuelCapacity <= 0)
+            fuelCapacity <= 0 ||
+            fuelCapacity > int.MaxValue)
         {
             throw new InvalidDataException(
                 "Calculated ship statistics are invalid.");
@@ -85,7 +98,7 @@ public sealed class ShipStatsCalculator
         return new ShipStats
         {
             MaxSpeed = maxSpeed,
-            FuelCapacity = fuelCapacity
+            FuelCapacity = (int)fuelCapacity
         };
     }
 }
