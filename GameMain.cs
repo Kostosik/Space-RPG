@@ -5,12 +5,14 @@ using Engine.Core.Time;
 using Engine.ECS.Entities;
 using Engine.Graphics.Commands;
 using Engine.Graphics.DebugGraphics;
+using Engine.Hosting.Desktop;
 using Engine.Input;
 using Engine.Networking.Replication;
 using Engine.Runtime;
 using Engine.Runtime.Scenes;
 using Engine.Serialization.SaveLoad.Ecs;
 using Engine.Serialization.SaveLoad.Worlds;
+using Engine.UI.Core;
 using GameProject.Galaxy;
 using GameProject.Game;
 using GameProject.Game.Scenes;
@@ -23,6 +25,12 @@ namespace GameProject;
 
 internal sealed class GameMain : EngineGame
 {
+    private readonly DesktopGameHostContext _hostContext;
+
+    private UiSystem? _ui;
+    private string? _pendingGalaxyJumpTargetSystemId;
+    private bool _galaxyJumpRouteCompleted;
+
     private bool _isGalaxyMapOpen;
     private SceneManager<GameSceneContext>? _sceneManager;
     private string _selectedGalaxySystemId = "sol";
@@ -36,7 +44,11 @@ internal sealed class GameMain : EngineGame
     private ShipDefinition? _starterShipDefinition;
     private readonly Dictionary<string, EquipmentDefinition>
     _equipmentDefinitions = new(StringComparer.Ordinal);
-    private ShipStats? _starterShipStats;
+
+    private readonly ShipEquipmentService _shipEquipmentService = new();
+
+    private readonly ShipStatsCalculator _shipStatsCalculator = new();
+
     private string _galaxyMapMessage =
         "SELECT A STAR SYSTEM";
     private StarSystemObject? _landedObject;
@@ -59,18 +71,16 @@ internal sealed class GameMain : EngineGame
     private DateTime _planetHoverStartedAt;
     private const double PlanetHoverDelaySeconds = 0.5;
     public GameMain(
-        EngineRuntime runtime,
-        string startupScenePath,
-        IPointerInput? pointerInput)
-        : base(runtime)
+        DesktopGameHostContext context,
+        string startupScenePath)
+        : base(context.Runtime)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(
-            startupScenePath);
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentException.ThrowIfNullOrWhiteSpace(startupScenePath);
 
-        _startupScenePath =
-            Path.GetFullPath(startupScenePath);
-
-        _pointerInput = pointerInput;
+        _hostContext = context;
+        _startupScenePath = Path.GetFullPath(startupScenePath);
+        _pointerInput = context.PointerInput;
     }
 
     protected override void ConfigureRuntime()
@@ -179,41 +189,38 @@ internal sealed class GameMain : EngineGame
             throw new InvalidOperationException(
                 "Player ship state does not match the loaded ship definition.");
         }
-        // Пересчитываем характеристики с установленным оборудованием.
-        var shipStats = new ShipStatsCalculator().Calculate(
-            _starterShipDefinition,
-            playerShip,
-            _equipmentDefinitions);
 
-        // Обновляем вместимость и полностью заправляем новый корабль.
-        _session.Player.GalaxyNavigation.SetFuelCapacity(
-            shipStats.FuelCapacity);
+        _ui = new UiSystem(
+    Runtime.Services.Graphics,
+    _hostContext.WindowWidth,
+    _hostContext.WindowHeight,
+    _hostContext.PointerInput,
+    _hostContext.TextInput,
+    _hostContext.Cursor);
 
-        _session.Player.GalaxyNavigation.AddFuel(
-            shipStats.FuelCapacity);
+        _hostContext.Resized += OnWindowResized;
+
+        InitializeStarterLoadout(playerShip);
+
+        playerShip.EquipmentChanged += OnPlayerShipEquipmentChanged;
+
+        ApplyPlayerShipStats(fillFuel: true);
 
         // Применяем скорость к ECS-компоненту.
         ref var shipComponent =
             ref Runtime.EcsWorld.Get<PlayerShipComponent>(_shipEntity);
 
-        shipComponent.MaxSpeed = shipStats.MaxSpeed;
-
-        _shipMovementSystem?.SetNavigationObstacles(
-            _session.World.StarSystem.NavigationObstacles);
-
-        _shipMovementSystem?.SetNavigationObstacles(
-            _session.World.StarSystem.NavigationObstacles);
+        _shipMovementSystem?.SetStarSystem(
+            _session.World.StarSystem);
 
         var gameTime = _session.Simulation.Time;
-
-
-        _shipMovementSystem?.SetLandingObjects(
-            _session.World.StarSystem.Objects);
 
         if (_shipMovementSystem is not null)
         {
             _shipMovementSystem.LandingCompleted +=
                 OnLandingCompleted;
+            _shipMovementSystem.SystemExitReached +=
+                OnSystemExitReached;
         }
         // Игра начинается в режиме ожидания приказов.
         gameTime.Pause();
@@ -304,6 +311,8 @@ internal sealed class GameMain : EngineGame
 
     protected override void OnUpdate(TimeSnapshot time)
     {
+        _ui?.Update(time.Delta.TotalSeconds);
+
         _sceneManager?.Update(time);
     }
 
@@ -335,7 +344,12 @@ internal sealed class GameMain : EngineGame
 
             return;
         }
-
+        // Завершаем гиперпереход только после остановки игровых суток.
+        if (_galaxyJumpRouteCompleted && gameTime.IsPaused)
+        {
+            CompletePendingGalaxyJump();
+            return;
+        }
         var endTurnPressed =
             Runtime.Services.Input.IsPressed(
                 ShipInputActions.EndTurn);
@@ -389,48 +403,57 @@ internal sealed class GameMain : EngineGame
         }
     }
 
-
     private void TryGalaxyJump()
     {
         if (_session is null)
             return;
 
-        var result = GalaxyJumpService.Execute(
+        var result = GalaxyJumpService.TryGetExitPosition(
             _session,
-            _shipMovementSystem,
             _selectedGalaxySystemId,
             GalaxyJumpFuelCost,
-            new Vector2(-100.0f, 0.0f));
+            out var exitPosition);
 
-        switch (result)
+        if (result != GalaxyJumpResult.RouteReady)
         {
-            case GalaxyJumpResult.TargetNotFound:
-                _galaxyMapMessage = "TARGET SYSTEM NOT FOUND";
-                return;
+            _galaxyMapMessage = result switch
+            {
+                GalaxyJumpResult.TargetNotFound =>
+                    "TARGET SYSTEM NOT FOUND",
 
-            case GalaxyJumpResult.NoConnection:
-                _galaxyMapMessage = "NO HYPERSPACE CONNECTION";
-                return;
+                GalaxyJumpResult.NoConnection =>
+                    "NO HYPERSPACE CONNECTION",
 
-            case GalaxyJumpResult.NotEnoughFuel:
-                _galaxyMapMessage = "NOT ENOUGH FUEL";
-                return;
+                GalaxyJumpResult.NotEnoughFuel =>
+                    "NOT ENOUGH FUEL",
 
-            case GalaxyJumpResult.JumpFailed:
-                _galaxyMapMessage = "JUMP FAILED";
-                return;
+                _ => "JUMP FAILED"
+            };
 
-            case GalaxyJumpResult.Completed:
-                _galaxyMapMessage = "HYPERSPACE JUMP COMPLETE";
-                break;
+            return;
         }
+
+        _pendingGalaxyJumpTargetSystemId =
+            _selectedGalaxySystemId;
+
+        _galaxyJumpRouteCompleted = false;
+
+        if (_shipMovementSystem is null ||
+            !_shipMovementSystem.TrySetSystemExitRoute(exitPosition))
+        {
+            _pendingGalaxyJumpTargetSystemId = null;
+
+            _galaxyMapMessage =
+                "NO SAFE ROUTE TO JUMP POINT";
+
+            return;
+        }
+
+        _galaxyMapMessage = "AUTOPILOT TO JUMP POINT";
 
         _isGalaxyMapOpen = false;
 
-        if (_shipMovementSystem is not null)
-        {
-            _shipMovementSystem.AcceptPointerCommands = true;
-        }
+        _shipMovementSystem.AcceptPointerCommands = true;
     }
 
     private void OnLandingCompleted(
@@ -857,7 +880,8 @@ internal sealed class GameMain : EngineGame
         var progress = gameTime?.DayProgress ?? 0.0;
 
         var routeInfo = "NO ROUTE";
-
+        if (_galaxyJumpRouteCompleted)
+            routeInfo = "JUMP POINT REACHED";
         if (path is not null && ship.MaxSpeed > 0.0f)
         {
             var remainingRoute = Math.Max(
@@ -897,9 +921,158 @@ internal sealed class GameMain : EngineGame
                 DebugRenderSpace.Screen));
     }
 
+    private void InitializeStarterLoadout(PlayerShipState playerShip)
+    {
+        var generator = new EquipmentGenerator();
+
+        InstallStarterEquipment(
+            playerShip,
+            generator,
+            "basic_engine",
+            "main_engine");
+
+        InstallStarterEquipment(
+            playerShip,
+            generator,
+            "basic_fuel_tank",
+            "fuel_tank");
+    }
+
+    private void InstallStarterEquipment(
+        PlayerShipState playerShip,
+        EquipmentGenerator generator,
+        string equipmentDefinitionId,
+        string slotId)
+    {
+        if (!_equipmentDefinitions.TryGetValue(
+                equipmentDefinitionId,
+                out var definition))
+        {
+            throw new InvalidDataException(
+                $"Starter equipment '{equipmentDefinitionId}' was not loaded.");
+        }
+
+        var instance = generator.Generate(definition, 1);
+
+        if (!playerShip.CargoHold.TryAdd(instance))
+        {
+            throw new InvalidOperationException(
+                "Failed to add starter equipment to cargo hold.");
+        }
+
+        var result = _shipEquipmentService.TryInstallFromCargoHold(
+            playerShip,
+            _starterShipDefinition
+                ?? throw new InvalidOperationException(
+                    "Starter ship definition was not loaded."),
+            slotId,
+            instance.InstanceId,
+            _equipmentDefinitions);
+
+        if (result != EquipmentTransferResult.Success)
+        {
+            throw new InvalidOperationException(
+                $"Failed to install starter equipment '{equipmentDefinitionId}': {result}.");
+        }
+    }
+
+    private void OnPlayerShipEquipmentChanged()
+    {
+        ApplyPlayerShipStats();
+    }
+
+    private void ApplyPlayerShipStats(bool fillFuel = false)
+    {
+        if (_session is null ||
+            _starterShipDefinition is null)
+        {
+            return;
+        }
+
+        var stats = _shipStatsCalculator.Calculate(
+            _starterShipDefinition,
+            _session.Player.Ship,
+            _equipmentDefinitions);
+
+        var navigation = _session.Player.GalaxyNavigation;
+
+        navigation.SetFuelCapacity(stats.FuelCapacity);
+
+        if (fillFuel)
+        {
+            navigation.AddFuel(stats.FuelCapacity);
+        }
+
+        _shipMovementSystem?.SetMaxSpeed(stats.MaxSpeed);
+    }
+
+    private void CompletePendingGalaxyJump()
+    {
+        if (_session is null ||
+            _pendingGalaxyJumpTargetSystemId is null)
+        {
+            _galaxyJumpRouteCompleted = false;
+            _pendingGalaxyJumpTargetSystemId = null;
+            return;
+        }
+
+        var targetSystemId =
+            _pendingGalaxyJumpTargetSystemId;
+
+        var result = GalaxyJumpService.Execute(
+            _session,
+            _shipMovementSystem,
+            targetSystemId,
+            GalaxyJumpFuelCost);
+
+        switch (result)
+        {
+            case GalaxyJumpResult.Completed:
+                _galaxyMapMessage = "HYPERSPACE JUMP COMPLETE";
+                break;
+
+            case GalaxyJumpResult.TargetNotFound:
+                _galaxyMapMessage = "TARGET SYSTEM NOT FOUND";
+                break;
+
+            case GalaxyJumpResult.NoConnection:
+                _galaxyMapMessage = "NO HYPERSPACE CONNECTION";
+                break;
+
+            case GalaxyJumpResult.NotEnoughFuel:
+                _galaxyMapMessage = "NOT ENOUGH FUEL";
+                break;
+
+            default:
+                _galaxyMapMessage = "JUMP FAILED";
+                break;
+        }
+
+        _pendingGalaxyJumpTargetSystemId = null;
+        _galaxyJumpRouteCompleted = false;
+
+        if (_shipMovementSystem is not null)
+        {
+            _shipMovementSystem.AcceptPointerCommands = true;
+        }
+    }
+
+    private void OnSystemExitReached()
+    {
+        if (_pendingGalaxyJumpTargetSystemId is null)
+            return;
+
+        _galaxyJumpRouteCompleted = true;
+
+        _galaxyMapMessage =
+            $"JUMP POINT REACHED: {_pendingGalaxyJumpTargetSystemId.ToUpperInvariant()}";
+    }
+
     protected override void OnRender(double interpolationAlpha)
     {
         _sceneManager?.Render(interpolationAlpha);
+
+        _ui?.Render();
     }
 
     private void DrawPlanetScreen()
@@ -1018,12 +1191,15 @@ internal sealed class GameMain : EngineGame
         {
             _shipMovementSystem.LandingCompleted -=
                 OnLandingCompleted;
+            _shipMovementSystem.SystemExitReached -=
+                OnSystemExitReached;
         }
         _shipMovementSystem?.Dispose();
         _shipMovementSystem = null;
 
         if (_session is not null)
         {
+            _session.Player.Ship.EquipmentChanged -= OnPlayerShipEquipmentChanged;
             Console.WriteLine(
                 $"Game session ended: {_session.SessionId}");
             _session.Simulation.Time.Advanced -= OnGameTimeAdvanced;
@@ -1046,6 +1222,12 @@ internal sealed class GameMain : EngineGame
         }
         _sceneManager?.Dispose();
         _sceneManager = null;
+
+        _hostContext.Resized -= OnWindowResized;
+
+        _ui?.Screens.Clear();
+        _ui?.ClearOverlays();
+        _ui = null;
     }
 
     private static Vector2 AddScaled(
@@ -1089,5 +1271,10 @@ internal sealed class GameMain : EngineGame
 
             previous = current;
         }
+    }
+
+    private void OnWindowResized(int width, int height)
+    {
+        _ui?.Resize(width, height);
     }
 }

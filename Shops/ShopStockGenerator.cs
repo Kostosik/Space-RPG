@@ -30,7 +30,7 @@ public sealed class ShopStockGenerator
 
         ValidateDefinition(definition);
 
-        var result = new ShopStock();
+        var result = new ShopStock(definition.Id);
 
         foreach (var entry in definition.Stock)
         {

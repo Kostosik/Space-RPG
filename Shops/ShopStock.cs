@@ -10,6 +10,25 @@ public sealed class ShopStock
 {
     private readonly EquipmentContainer _equipment = new();
 
+    public ShopStock(string shopDefinitionId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(shopDefinitionId);
+
+        if (!string.Equals(
+                shopDefinitionId,
+                shopDefinitionId.Trim(),
+                StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "Shop definition ID cannot contain surrounding whitespace.",
+                nameof(shopDefinitionId));
+        }
+
+        ShopDefinitionId = shopDefinitionId;
+    }
+
+    public string ShopDefinitionId { get; }
+
     public int Count => _equipment.Count;
 
     public IReadOnlyDictionary<Guid, EquipmentInstance> Items =>

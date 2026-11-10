@@ -3,10 +3,6 @@ using GameProject.Ships;
 
 namespace GameProject.Player;
 
-/// <summary>
-/// Current state of the player's ship.
-/// Stores installed equipment and the ship cargo hold.
-/// </summary>
 public sealed class PlayerShipState
 {
     private readonly Dictionary<string, EquipmentInstance>
@@ -42,6 +38,13 @@ public sealed class PlayerShipState
 
     public IReadOnlyDictionary<string, EquipmentInstance>
         InstalledEquipment => _readOnlyInstalledEquipment;
+
+    internal event Action? EquipmentChanged;
+
+    internal void NotifyEquipmentChanged()
+    {
+        EquipmentChanged?.Invoke();
+    }
 
     internal bool TrySetEquipment(
         string slotId,

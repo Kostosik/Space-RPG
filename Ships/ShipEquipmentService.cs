@@ -94,7 +94,10 @@ public sealed class ShipEquipmentService
         }
 
         if (ship.TrySetEquipment(slot.Id, removedEquipment))
+        {
+            ship.NotifyEquipmentChanged();
             return EquipmentTransferResult.Success;
+        }
 
         if (!ship.CargoHold.TryAdd(removedEquipment))
         {
@@ -134,7 +137,10 @@ public sealed class ShipEquipmentService
         }
 
         if (ship.CargoHold.TryAdd(removedEquipment))
+        {
+            ship.NotifyEquipmentChanged();
             return EquipmentTransferResult.Success;
+        }
 
         if (!ship.TrySetEquipment(slotId, removedEquipment))
         {

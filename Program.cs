@@ -76,9 +76,8 @@ internal static class Program
 
         DesktopGameHost.Run(
             (DesktopGameHostContext context) => new GameMain(
-                context.Runtime,
-                startupScenePath,
-                context.PointerInput),
+                context,
+                startupScenePath),
                         new DesktopGameHostOptions
                 {
                     Title = "Space-RPG",

@@ -24,13 +24,17 @@ public sealed class PlayerShipMovementSystem :
     IUpdateSystem,
     IDisposable
 {
+    private const double SystemBoundaryClearance =
+    StarSystem.DefaultJumpBoundaryClearance;
+    private StarSystem? _starSystem;
     private IReadOnlyList<StarSystemObject> _landingObjects =
     Array.Empty<StarSystemObject>();
 
     private StarSystemObject? _pendingLandingTarget;
 
     public event Action<StarSystemObject>? LandingCompleted;
-
+    public event Action? SystemExitReached;
+    private bool _isSystemExitRoute;
     public bool AcceptPointerCommands { get; set; } = true;
     private const double PathEpsilon = 0.000001;
     private const double LandingApproachClearance = 28.0;
@@ -120,6 +124,33 @@ public sealed class PlayerShipMovementSystem :
     }
 
     public NavigationPath? CurrentPath => _path;
+
+    public void SetMaxSpeed(float maxSpeed)
+    {
+        if (_disposed)
+        {
+            throw new ObjectDisposedException(
+                nameof(PlayerShipMovementSystem));
+        }
+
+        if (!float.IsFinite(maxSpeed) || maxSpeed <= 0.0f)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxSpeed));
+        }
+
+        if (!_world.Exists(_shipEntity) ||
+            !_world.Has<PlayerShipComponent>(_shipEntity))
+        {
+            throw new InvalidOperationException(
+                "Player ship entity does not exist.");
+        }
+
+        ref var ship =
+            ref _world.Get<PlayerShipComponent>(_shipEntity);
+
+        ship.MaxSpeed = maxSpeed;
+    }
 
     public int NextWaypointIndex => _nextWaypointIndex;
 
@@ -263,7 +294,48 @@ public sealed class PlayerShipMovementSystem :
                 landingTarget,
                 ship.Position);
         }
+        else if (_starSystem is not null)
+        {
+            var boundedTarget = _starSystem.ClampToJumpBoundary(
+                new NavigationVector2(target.X, target.Y),
+                SystemBoundaryClearance);
 
+            target = new Vector2(
+                (float)boundedTarget.X,
+                (float)boundedTarget.Y);
+        }
+
+        TryBuildAndSetRoute(
+            target,
+            landingTarget,
+            ref ship,
+            isSystemExitRoute: false);
+    }
+
+    private bool IsPathInsideJumpBoundary(NavigationPath path)
+    {
+        if (_starSystem is null)
+            return true;
+
+        foreach (var point in path.Points)
+        {
+            if (!_starSystem.IsWithinJumpBoundary(
+                    point,
+                    SystemBoundaryClearance))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool TryBuildAndSetRoute(
+    Vector2 target,
+    StarSystemObject? landingTarget,
+    ref PlayerShipComponent ship,
+    bool isSystemExitRoute)
+    {
         var start = new NavigationVector2(
             ship.Position.X,
             ship.Position.Y);
@@ -274,13 +346,11 @@ public sealed class PlayerShipMovementSystem :
 
         NavigationPath? path = null;
 
-        // Сначала пытаемся построить маршрут с запасом
-        // пространства для выполнения поворотов.
         double[] clearances =
         [
             TurnPlanningClearance,
-    TurnPlanningClearance * 0.5,
-    0.0
+        TurnPlanningClearance * 0.5,
+        0.0
         ];
 
         foreach (var clearance in clearances)
@@ -306,22 +376,26 @@ public sealed class PlayerShipMovementSystem :
             if (rawPath is null)
                 continue;
 
-            // Сглаживаем начальный поворот и повороты маршрута.
-            path = NavigationPathSmoother.Smooth(
+            var candidate = NavigationPathSmoother.Smooth(
                 rawPath,
                 ship.Rotation,
                 ShipTurnRadius,
                 _obstacles,
                 _pathfinder);
 
-            if (path is not null)
-                break;
+            if (candidate is null ||
+                !IsPathInsideJumpBoundary(candidate))
+            {
+                continue;
+            }
+
+            path = candidate;
+            break;
         }
 
         if (path is null)
-            return;
+            return false;
 
-        // Корабль уже находится в точке назначения.
         if (path.Length <= PathEpsilon)
         {
             if (landingTarget is not null)
@@ -331,12 +405,14 @@ public sealed class PlayerShipMovementSystem :
             else
             {
                 ClearPath();
+
+                if (isSystemExitRoute)
+                    SystemExitReached?.Invoke();
             }
 
-            return;
+            return true;
         }
 
-        // Только после успешного построения заменяем маршрут.
         ClearPath();
 
         _path = path;
@@ -344,6 +420,7 @@ public sealed class PlayerShipMovementSystem :
         _distanceTravelled = 0.0;
 
         _pendingLandingTarget = landingTarget;
+        _isSystemExitRoute = isSystemExitRoute;
 
         if (landingTarget is PlanetObject planet)
         {
@@ -356,6 +433,8 @@ public sealed class PlayerShipMovementSystem :
 
         ship.Destination = target;
         ship.HasDestination = true;
+
+        return true;
     }
 
     private StarSystemObject? FindLandingTarget(
@@ -518,6 +597,19 @@ public sealed class PlayerShipMovementSystem :
         return distanceSquared <= landingRadius * landingRadius;
     }
 
+    public void SetStarSystem(StarSystem starSystem)
+    {
+        ArgumentNullException.ThrowIfNull(starSystem);
+
+        if (!ReferenceEquals(_starSystem, starSystem))
+            ClearPath();
+
+        _starSystem = starSystem;
+
+        _landingObjects = starSystem.Objects;
+        _obstacles = starSystem.NavigationObstacles;
+    }
+
     private void TryRefreshMovingLandingTarget(
         ref PlayerShipComponent ship)
     {
@@ -583,8 +675,11 @@ public sealed class PlayerShipMovementSystem :
             _obstacles);
 
         // Не заменяем рабочий маршрут, если новый построить нельзя.
-        if (newPath is null)
+        if (newPath is null ||
+            !IsPathInsideJumpBoundary(newPath))
+        {
             return;
+        }
 
         if (newPath.Length <= PathEpsilon)
         {
@@ -605,9 +700,53 @@ public sealed class PlayerShipMovementSystem :
         ship.HasDestination = true;
     }
 
-    public void ResetForSystemTransition(
-    Vector2 spawnPosition)
+    public bool TrySetSystemExitRoute(Vector2 target)
     {
+        if (_disposed ||
+            _starSystem is null ||
+            (_gameTime is not null && !_gameTime.IsPaused) ||
+            _isLandingAnimating ||
+            !_world.Exists(_shipEntity) ||
+            !_world.Has<PlayerShipComponent>(_shipEntity) ||
+            !float.IsFinite(target.X) ||
+            !float.IsFinite(target.Y))
+        {
+            return false;
+        }
+
+        var destination = new NavigationVector2(
+            target.X,
+            target.Y);
+
+        if (!_starSystem.IsWithinJumpBoundary(
+                destination,
+                SystemBoundaryClearance))
+        {
+            return false;
+        }
+
+        ref var ship =
+            ref _world.Get<PlayerShipComponent>(_shipEntity);
+
+        return TryBuildAndSetRoute(
+            target,
+            null,
+            ref ship,
+            isSystemExitRoute: true);
+    }
+
+    public void ResetForSystemTransition(
+    Vector2 spawnPosition,
+    float rotation = 0.0f)
+    {
+        if (!float.IsFinite(spawnPosition.X) ||
+            !float.IsFinite(spawnPosition.Y) ||
+            !float.IsFinite(rotation))
+        {
+            throw new ArgumentException(
+                "Spawn position and rotation must be finite.");
+        }
+
         if (!_world.Exists(_shipEntity) ||
             !_world.Has<PlayerShipComponent>(_shipEntity))
         {
@@ -620,7 +759,7 @@ public sealed class PlayerShipMovementSystem :
             ref _world.Get<PlayerShipComponent>(_shipEntity);
 
         ship.Position = spawnPosition;
-        ship.Rotation = 0.0f;
+        ship.Rotation = rotation;
     }
 
     // Вызывается исключительно игровым временем.
@@ -737,7 +876,13 @@ public sealed class PlayerShipMovementSystem :
 
         if (completedLanding is null)
         {
+            var completedSystemExit = _isSystemExitRoute;
+
             ClearPath();
+
+            if (completedSystemExit)
+                SystemExitReached?.Invoke();
+
             return;
         }
 
@@ -810,6 +955,7 @@ public sealed class PlayerShipMovementSystem :
         _landingAnimationCompleted = false;
         _landingAnimationTarget = null;
         _landingAnimationStartPosition = default;
+        _isSystemExitRoute = false;
         _landingAnimationElapsedDays = 0.0;
     }
 

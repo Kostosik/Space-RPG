@@ -63,8 +63,8 @@ public sealed class GalaxyNavigationState
         if (amount <= 0)
             return;
 
-        Fuel = Math.Min(
+        Fuel = (int)Math.Min(
             FuelCapacity,
-            Fuel + amount);
+            (long)Fuel + amount);
     }
 }

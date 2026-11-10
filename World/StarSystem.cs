@@ -4,9 +4,12 @@ namespace GameProject.World;
 
 public sealed class StarSystem
 {
+    public const double DefaultJumpBoundaryClearance = 24.0;
+    public const double DefaultJumpBoundaryRadius = 700.0;
+    public const double DefaultArrivalBoundaryOffset = 80.0;
     public StarSystem(
         StarObject star,
-        IReadOnlyList<StarSystemObject> objects)
+        IReadOnlyList<StarSystemObject> objects, double jumpBoundaryRadius = DefaultJumpBoundaryRadius)
     {
         ArgumentNullException.ThrowIfNull(star);
         ArgumentNullException.ThrowIfNull(objects);
@@ -17,8 +20,14 @@ public sealed class StarSystem
                 "Star system cannot contain null objects.",
                 nameof(objects));
         }
-
+        if (!double.IsFinite(jumpBoundaryRadius) ||
+    jumpBoundaryRadius <= star.NavigationRadius)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(jumpBoundaryRadius));
+        }
         Star = star;
+        JumpBoundaryRadius = jumpBoundaryRadius;
         Objects = Array.AsReadOnly(objects.ToArray());
 
         // Единственное навигационное препятствие — центральная звезда.
@@ -51,6 +60,54 @@ public sealed class StarSystem
     }
 
     public StarObject Star { get; }
+
+    public double JumpBoundaryRadius { get; }
+
+    public bool IsWithinJumpBoundary(
+        NavigationVector2 position,
+        double clearance = 0.0)
+    {
+        if (!position.IsFinite)
+            throw new ArgumentOutOfRangeException(nameof(position));
+
+        var usableRadius = GetUsableBoundaryRadius(clearance);
+
+        var center = new NavigationVector2(Star.X, Star.Y);
+
+        return NavigationVector2.Distance(position, center)
+            <= usableRadius;
+    }
+
+    public NavigationVector2 ClampToJumpBoundary(
+        NavigationVector2 position,
+        double clearance = 0.0)
+    {
+        if (!position.IsFinite)
+            throw new ArgumentOutOfRangeException(nameof(position));
+
+        var usableRadius = GetUsableBoundaryRadius(clearance);
+
+        var center = new NavigationVector2(Star.X, Star.Y);
+        var offset = position - center;
+        var distance = offset.Length;
+
+        if (distance <= usableRadius || distance <= 0.000001)
+            return position;
+
+        return center + offset * (usableRadius / distance);
+    }
+
+    private double GetUsableBoundaryRadius(double clearance)
+    {
+        if (!double.IsFinite(clearance) ||
+            clearance < 0.0 ||
+            clearance >= JumpBoundaryRadius)
+        {
+            throw new ArgumentOutOfRangeException(nameof(clearance));
+        }
+
+        return JumpBoundaryRadius - clearance;
+    }
 
     public IReadOnlyList<StarSystemObject> Objects { get; }
 

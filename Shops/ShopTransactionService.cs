@@ -30,7 +30,7 @@ public sealed class ShopTransactionService
             return Result(ShopTransactionStatus.InvalidPrice);
         }
 
-        if (!shopStock.Items.TryGet(
+        if (!shopStock.TryGet(
                 equipmentInstanceId,
                 out var equipment) ||
             equipment is null)
@@ -59,7 +59,7 @@ public sealed class ShopTransactionService
             return Result(ShopTransactionStatus.InsufficientCredits);
 
         // Извлекаем конкретный экземпляр из магазина.
-        if (!shopStock.Items.TryRemove(
+        if (!shopStock.TryRemove(
                 equipmentInstanceId,
                 out var removedEquipment) ||
             removedEquipment is null)
@@ -148,7 +148,7 @@ public sealed class ShopTransactionService
         }
 
         // Магазин принимает тот же экземпляр.
-        if (!shopStock.Items.TryAdd(removedEquipment))
+        if (!shopStock.TryAdd(removedEquipment))
         {
             RestoreToCargoHold(player, removedEquipment);
 
@@ -278,7 +278,7 @@ public sealed class ShopTransactionService
         ShopStock shopStock,
         EquipmentInstance equipment)
     {
-        if (!shopStock.Items.TryAdd(equipment))
+        if (!shopStock.TryAdd(equipment))
         {
             throw new InvalidOperationException(
                 "Failed to restore equipment to shop stock.");
@@ -317,7 +317,7 @@ public sealed class ShopTransactionService
         ShopStock shopStock,
         EquipmentInstance equipment)
     {
-        if (!shopStock.Items.TryRemove(
+        if (!shopStock.TryRemove(
                 equipment.InstanceId,
                 out _))
         {

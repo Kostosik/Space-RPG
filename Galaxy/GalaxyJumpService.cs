@@ -1,12 +1,14 @@
 ﻿using Engine.Core.Math;
 using GameProject.Game;
 using GameProject.Player;
+using GameProject.World;
 
 namespace GameProject.Galaxy;
 
 internal enum GalaxyJumpResult
 {
     Completed,
+    RouteReady,
     TargetNotFound,
     NoConnection,
     NotEnoughFuel,
@@ -15,15 +17,15 @@ internal enum GalaxyJumpResult
 
 internal static class GalaxyJumpService
 {
-    public static GalaxyJumpResult Execute(
+    public static GalaxyJumpResult TryGetExitPosition(
         GameSession session,
-        PlayerShipMovementSystem? movementSystem,
         string targetSystemId,
         int fuelCost,
-        Vector2 spawnPosition)
+        out Vector2 exitPosition)
     {
         ArgumentNullException.ThrowIfNull(session);
-        ArgumentException.ThrowIfNullOrWhiteSpace(targetSystemId);
+
+        exitPosition = default;
 
         var galaxy = session.World.Galaxy;
         var navigation = session.Player.GalaxyNavigation;
@@ -46,6 +48,85 @@ internal static class GalaxyJumpService
             return GalaxyJumpResult.NotEnoughFuel;
         }
 
+        var current = galaxy.GetSystem(
+            navigation.CurrentSystemId);
+
+        if (current is null)
+            return GalaxyJumpResult.JumpFailed;
+
+        var dx = (double)target.MapX - current.MapX;
+        var dy = (double)target.MapY - current.MapY;
+
+        var length = Math.Sqrt(dx * dx + dy * dy);
+
+        if (!double.IsFinite(length) || length <= 0.000001)
+            return GalaxyJumpResult.JumpFailed;
+
+        var starSystem = session.World.StarSystem;
+
+        var exitRadius =
+            starSystem.JumpBoundaryRadius -
+            StarSystem.DefaultJumpBoundaryClearance;
+
+        if (!double.IsFinite(exitRadius) || exitRadius <= 0)
+            return GalaxyJumpResult.JumpFailed;
+
+        exitPosition = new Vector2(
+            (float)(starSystem.Star.X + dx / length * exitRadius),
+            (float)(starSystem.Star.Y + dy / length * exitRadius));
+
+        if (!float.IsFinite(exitPosition.X) ||
+            !float.IsFinite(exitPosition.Y))
+        {
+            exitPosition = default;
+            return GalaxyJumpResult.JumpFailed;
+        }
+
+        return GalaxyJumpResult.RouteReady;
+    }
+
+    public static GalaxyJumpResult Execute(
+        GameSession session,
+        PlayerShipMovementSystem? movementSystem,
+        string targetSystemId,
+        int fuelCost)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetSystemId);
+
+        var galaxy = session.World.Galaxy;
+        var navigation = session.Player.GalaxyNavigation;
+
+        var target = galaxy.GetSystem(targetSystemId);
+
+        if (target is null)
+            return GalaxyJumpResult.TargetNotFound;
+
+        var current = galaxy.GetSystem(
+            navigation.CurrentSystemId);
+
+        if (current is null)
+            return GalaxyJumpResult.JumpFailed;
+
+        if (!galaxy.CanTravel(current.Id, target.Id))
+            return GalaxyJumpResult.NoConnection;
+
+        if (fuelCost <= 0 ||
+            navigation.Fuel < fuelCost)
+        {
+            return GalaxyJumpResult.NotEnoughFuel;
+        }
+
+        // Направление движения между звёздными системами.
+        var dx = (double)target.MapX - current.MapX;
+        var dy = (double)target.MapY - current.MapY;
+
+        var length = Math.Sqrt(dx * dx + dy * dy);
+
+        if (!double.IsFinite(length) || length <= 0.000001)
+            return GalaxyJumpResult.JumpFailed;
+
+        // Переход разрешён только при успешном списании топлива.
         if (!navigation.TryJump(
                 galaxy,
                 target.Id,
@@ -57,17 +138,35 @@ internal static class GalaxyJumpService
         // Загружаем новую звёздную систему.
         session.World.EnterSystem(target.Id);
 
-        // Обновляем объекты для посадки.
-        movementSystem?.SetLandingObjects(
-            session.World.StarSystem.Objects);
+        var starSystem = session.World.StarSystem;
 
-        // Обновляем навигационные препятствия.
-        movementSystem?.SetNavigationObstacles(
-            session.World.StarSystem.NavigationObstacles);
+        // Появляемся со стороны предыдущей системы.
+        var availableOffset =
+            starSystem.JumpBoundaryRadius -
+            starSystem.Star.NavigationRadius -
+            1.0;
 
-        // Перемещаем корабль и очищаем старое состояние.
+        var arrivalOffset = Math.Min(
+            StarSystem.DefaultArrivalBoundaryOffset,
+            availableOffset);
+
+        var arrivalRadius =
+            starSystem.JumpBoundaryRadius - arrivalOffset;
+
+        var spawnPosition = new Vector2(
+            (float)(starSystem.Star.X - dx / length * arrivalRadius),
+            (float)(starSystem.Star.Y - dy / length * arrivalRadius));
+
+        // Корабль смотрит внутрь новой системы.
+        var entryRotation = MathF.Atan2(
+            (float)dy,
+            (float)dx);
+
+        movementSystem?.SetStarSystem(starSystem);
+
         movementSystem?.ResetForSystemTransition(
-            spawnPosition);
+            spawnPosition,
+            entryRotation);
 
         return GalaxyJumpResult.Completed;
     }
