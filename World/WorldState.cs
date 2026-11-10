@@ -1,7 +1,14 @@
-﻿namespace GameProject.World;
+﻿
+using System;
+using System.Collections.Generic;
+
+namespace GameProject.World;
 
 public sealed class WorldState
 {
+    private readonly Dictionary<string, StarSystem> _starSystems =
+        new(StringComparer.OrdinalIgnoreCase);
+
     private WorldState(Guid id, int seed)
     {
         if (id == Guid.Empty)
@@ -18,8 +25,15 @@ public sealed class WorldState
             ?? throw new InvalidOperationException(
                 "Starting galaxy system was not generated.");
 
-        StarSystem = StarSystemGenerator.Generate(
+        // Начальная система создаётся сразу.
+        var startingStarSystem = StarSystemGenerator.Generate(
             startingSystem.Seed);
+
+        _starSystems.Add(
+            startingSystem.Id,
+            startingStarSystem);
+
+        CurrentSystemId = startingSystem.Id;
     }
 
     public Guid Id { get; }
@@ -28,7 +42,15 @@ public sealed class WorldState
 
     public GalaxyMap Galaxy { get; }
 
-    public StarSystem StarSystem { get; private set; }
+    // ID текущей системы.
+    public string CurrentSystemId { get; private set; }
+
+    // Состояние текущей звёздной системы.
+    public StarSystem StarSystem =>
+        _starSystems[CurrentSystemId];
+
+    // Количество систем, состояние которых уже создано.
+    public int VisitedSystemCount => _starSystems.Count;
 
     public void EnterSystem(string systemId)
     {
@@ -41,8 +63,21 @@ public sealed class WorldState
                 nameof(systemId));
         }
 
-        StarSystem = StarSystemGenerator.Generate(
-            system.Seed);
+        // Генерируем систему только при первом посещении.
+        if (!_starSystems.TryGetValue(
+                system.Id,
+                out _))
+        {
+            var starSystem = StarSystemGenerator.Generate(
+                system.Seed);
+
+            _starSystems.Add(
+                system.Id,
+                starSystem);
+        }
+
+        // При повторном посещении используем сохранённый экземпляр.
+        CurrentSystemId = system.Id;
     }
 
     public static WorldState Create(

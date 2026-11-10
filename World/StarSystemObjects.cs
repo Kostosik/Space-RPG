@@ -1,21 +1,41 @@
-﻿namespace GameProject.World;
+﻿
+namespace GameProject.World;
 
 public abstract class StarSystemObject
 {
     protected StarSystemObject(
+        string id,
         string name,
         double x,
         double y,
         double visualRadius)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        if (!string.Equals(
+                id,
+                id.Trim(),
+                StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "Object ID cannot contain surrounding whitespace.",
+                nameof(id));
+        }
+
+        Id = id;
         Name = name;
         X = x;
         Y = y;
         VisualRadius = visualRadius;
     }
 
+    public string Id { get; }
+
     public string Name { get; }
+
     public double X { get; private set; }
+
     public double Y { get; private set; }
 
     protected void SetPosition(double x, double y)
@@ -23,18 +43,20 @@ public abstract class StarSystemObject
         X = x;
         Y = y;
     }
+
     public double VisualRadius { get; }
 }
 
 public sealed class StarObject : StarSystemObject
 {
     public StarObject(
+        string id,
         string name,
         double x,
         double y,
         double visualRadius,
         double navigationRadius)
-        : base(name, x, y, visualRadius)
+        : base(id, name, x, y, visualRadius)
     {
         NavigationRadius = navigationRadius;
     }
@@ -45,12 +67,14 @@ public sealed class StarObject : StarSystemObject
 public sealed class PlanetObject : StarSystemObject
 {
     public PlanetObject(
+        string id,
         string name,
         double x,
         double y,
         double radius,
         string description)
         : this(
+            id,
             name,
             Math.Sqrt(x * x + y * y),
             90.0,
@@ -61,6 +85,7 @@ public sealed class PlanetObject : StarSystemObject
     }
 
     public PlanetObject(
+        string id,
         string name,
         double orbitRadius,
         double orbitalPeriodDays,
@@ -70,6 +95,7 @@ public sealed class PlanetObject : StarSystemObject
         double centerX = 0.0,
         double centerY = 0.0)
         : base(
+            id,
             name,
             centerX + Math.Cos(initialAngleRadians) * orbitRadius,
             centerY + Math.Sin(initialAngleRadians) * orbitRadius,
@@ -89,13 +115,10 @@ public sealed class PlanetObject : StarSystemObject
 
     public string Description { get; }
 
-    // Расстояние до звезды.
     public double OrbitRadius { get; }
 
-    // Сколько игровых дней занимает полный оборот.
     public double OrbitalPeriodDays { get; }
 
-    // Текущий угол планеты.
     public double OrbitAngleRadians { get; private set; }
 
     public void AdvanceOrbit(
@@ -106,13 +129,11 @@ public sealed class PlanetObject : StarSystemObject
         if (!double.IsFinite(elapsedGameDays) || elapsedGameDays <= 0)
             return;
 
-        // Увеличиваем угол движения.
         OrbitAngleRadians =
             (OrbitAngleRadians +
              Math.Tau * elapsedGameDays / OrbitalPeriodDays)
             % Math.Tau;
 
-        // Вычисляем новые координаты.
         var x = centerX +
                 Math.Cos(OrbitAngleRadians) * OrbitRadius;
 
@@ -126,11 +147,12 @@ public sealed class PlanetObject : StarSystemObject
 public sealed class AsteroidObject : StarSystemObject
 {
     public AsteroidObject(
+        string id,
         string name,
         double x,
         double y,
         double radius)
-        : base(name, x, y, radius)
+        : base(id, name, x, y, radius)
     {
     }
 }
@@ -138,12 +160,13 @@ public sealed class AsteroidObject : StarSystemObject
 public sealed class StationObject : StarSystemObject
 {
     public StationObject(
+        string id,
         string name,
         double x,
         double y,
         double radius,
         string description)
-        : base(name, x, y, radius)
+        : base(id, name, x, y, radius)
     {
         Description = description;
     }

@@ -5,6 +5,7 @@ using Engine.Core.Time;
 using Engine.ECS.Entities;
 using Engine.Graphics.Commands;
 using Engine.Graphics.DebugGraphics;
+using Engine.Graphics.Fonts;
 using Engine.Hosting.Desktop;
 using Engine.Input;
 using Engine.Networking.Replication;
@@ -13,6 +14,7 @@ using Engine.Runtime.Scenes;
 using Engine.Serialization.SaveLoad.Ecs;
 using Engine.Serialization.SaveLoad.Worlds;
 using Engine.UI.Core;
+using Engine.UI.Styling;
 using GameProject.Galaxy;
 using GameProject.Game;
 using GameProject.Game.Scenes;
@@ -30,6 +32,7 @@ internal sealed class GameMain : EngineGame
     private readonly DesktopGameHostContext _hostContext;
 
     private UiSystem? _ui;
+    private FontHandle _gameFont = FontHandle.Invalid;
     private string? _pendingGalaxyJumpTargetSystemId;
     private bool _galaxyJumpRouteCompleted;
 
@@ -200,13 +203,26 @@ internal sealed class GameMain : EngineGame
                 "Player ship state does not match the loaded ship definition.");
         }
 
+        var fontData = _hostContext.AssetSource.Load(
+            new AssetPath("Fonts/GameFont.TTF"));
+
+        _gameFont = _hostContext.Graphics.Fonts.Create(
+            fontData,
+            new FontDescription(24));
+
+        var uiTheme = new UiTheme
+        {
+            DefaultFont = _gameFont
+        };
+
         _ui = new UiSystem(
-    Runtime.Services.Graphics,
-    _hostContext.WindowWidth,
-    _hostContext.WindowHeight,
-    _hostContext.PointerInput,
-    _hostContext.TextInput,
-    _hostContext.Cursor);
+            Runtime.Services.Graphics,
+            _hostContext.WindowWidth,
+            _hostContext.WindowHeight,
+            _hostContext.PointerInput,
+            _hostContext.TextInput,
+            _hostContext.Cursor,
+            uiTheme);
 
         _hostContext.Resized += OnWindowResized;
         _shipWindow = new ShipWindow(_ui);
@@ -1329,6 +1345,11 @@ internal sealed class GameMain : EngineGame
         _ui?.Screens.Clear();
         _ui?.ClearOverlays();
         _ui = null;
+        if (_gameFont.IsValid)
+        {
+            _hostContext.Graphics.Fonts.Destroy(_gameFont);
+            _gameFont = FontHandle.Invalid;
+        }
     }
 
     private static Vector2 AddScaled(

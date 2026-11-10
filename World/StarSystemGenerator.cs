@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿
+using System.Collections.Generic;
 
 namespace GameProject.World;
 
@@ -20,14 +21,34 @@ public static class StarSystemGenerator
 
     public static StarSystem Generate()
     {
-        return Generate(Random.Shared.Next());
+        var seed = Random.Shared.Next();
+
+        return Generate($"generated-{seed}", seed);
     }
 
     public static StarSystem Generate(int seed)
     {
+        return Generate($"generated-{seed}", seed);
+    }
+
+    public static StarSystem Generate(string systemId, int seed)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(systemId);
+
+        if (!string.Equals(
+                systemId,
+                systemId.Trim(),
+                StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "System ID cannot contain surrounding whitespace.",
+                nameof(systemId));
+        }
+
         var random = new Random(seed);
 
         var star = new StarObject(
+            $"{systemId}:star",
             "Звезда",
             0,
             0,
@@ -43,18 +64,14 @@ public static class StarSystemGenerator
 
         for (var i = 0; i < planetCount; i++)
         {
-            // Радиус орбиты.
             var distance =
                 115.0 + i * 80.0 + random.NextDouble() * 20.0;
 
-            // Начальное положение.
             var angle =
                 random.NextDouble() * Math.PI * 2.0;
 
-            // У каждой планеты своя скорость.
             var orbitalPeriod = 12.0 + i * 9.0;
 
-            // Увеличиваем размер планет.
             var radius = random.Next(12, 24);
 
             var name = PlanetNames[
@@ -62,6 +79,7 @@ public static class StarSystemGenerator
 
             objects.Add(
                 new PlanetObject(
+                    $"{systemId}:planet:{i + 1}",
                     name,
                     distance,
                     orbitalPeriod,
@@ -70,22 +88,22 @@ public static class StarSystemGenerator
                     "Неисследованная планета."));
         }
 
-        // Астероидное поле.
         var asteroidCount = random.Next(4, 10);
 
         for (var i = 0; i < asteroidCount; i++)
         {
             objects.Add(
                 new AsteroidObject(
+                    $"{systemId}:asteroid:{i + 1}",
                     "Астероид",
                     random.Next(-350, 351),
                     random.Next(-350, 351),
                     random.Next(3, 7)));
         }
 
-        // Космическая станция.
         objects.Add(
             new StationObject(
+                $"{systemId}:station:1",
                 "Орбитальная станция",
                 random.Next(-280, 281),
                 random.Next(-280, 281),
