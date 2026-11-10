@@ -38,24 +38,13 @@ public static class ShipDefinitionValidator
         {
             if (slot is null ||
                 string.IsNullOrWhiteSpace(slot.Id) ||
-                string.IsNullOrWhiteSpace(slot.Type))
-            {
-                throw new InvalidDataException(
-                    $"Ship '{definition.Id}' contains an invalid slot.");
-            }
-
-            if (!string.Equals(
+                !string.Equals(
                     slot.Id,
                     slot.Id.Trim(),
-                    StringComparison.Ordinal) ||
-                !string.Equals(
-                    slot.Type,
-                    slot.Type.Trim(),
                     StringComparison.Ordinal))
             {
                 throw new InvalidDataException(
-                    $"Ship '{definition.Id}' contains a slot " +
-                    "with surrounding whitespace.");
+                    $"Ship '{definition.Id}' contains an invalid slot ID.");
             }
 
             if (!slotIds.Add(slot.Id))
@@ -63,6 +52,36 @@ public static class ShipDefinitionValidator
                 throw new InvalidDataException(
                     $"Ship '{definition.Id}' contains duplicate slot ID " +
                     $"'{slot.Id}'.");
+            }
+
+            if (slot.AllowedEquipmentTypes is null ||
+                slot.AllowedEquipmentTypes.Count == 0)
+            {
+                throw new InvalidDataException(
+                    $"Slot '{slot.Id}' has no allowed equipment types.");
+            }
+
+            var types = new HashSet<string>(
+                StringComparer.Ordinal);
+
+            foreach (var type in slot.AllowedEquipmentTypes)
+            {
+                if (string.IsNullOrWhiteSpace(type) ||
+                    !string.Equals(
+                        type,
+                        type.Trim(),
+                        StringComparison.Ordinal))
+                {
+                    throw new InvalidDataException(
+                        $"Slot '{slot.Id}' contains an invalid equipment type.");
+                }
+
+                if (!types.Add(type))
+                {
+                    throw new InvalidDataException(
+                        $"Slot '{slot.Id}' contains duplicate equipment type " +
+                        $"'{type}'.");
+                }
             }
         }
     }

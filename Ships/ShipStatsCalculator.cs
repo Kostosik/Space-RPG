@@ -7,11 +7,14 @@ public sealed class ShipStatsCalculator
     public ShipStats Calculate(
         ShipDefinition definition,
         PlayerShipState ship,
-        IReadOnlyDictionary<string, EquipmentDefinition> equipmentDefinitions)
+        IReadOnlyDictionary<string, EquipmentDefinition>
+            equipmentDefinitions)
     {
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(ship);
         ArgumentNullException.ThrowIfNull(equipmentDefinitions);
+
+        ShipDefinitionValidator.Validate(definition);
 
         if (!string.Equals(
                 definition.Id,
@@ -22,21 +25,11 @@ public sealed class ShipStatsCalculator
                 "Ship state does not match ship definition.");
         }
 
-        if (definition.BaseStats is null ||
-            !float.IsFinite(definition.BaseStats.MaxSpeed) ||
-            definition.BaseStats.MaxSpeed <= 0.0f ||
-            definition.BaseStats.FuelCapacity <= 0)
-        {
-            throw new InvalidDataException(
-                "Ship contains invalid base statistics.");
-        }
-
         var slots = definition.Slots.ToDictionary(
             slot => slot.Id,
             StringComparer.Ordinal);
 
         var maxSpeed = definition.BaseStats.MaxSpeed;
-
         long fuelCapacity = definition.BaseStats.FuelCapacity;
 
         foreach (var installed in ship.InstalledEquipment)
@@ -57,10 +50,9 @@ public sealed class ShipStatsCalculator
                     $"Unknown equipment '{instance.DefinitionId}'.");
             }
 
-            if (!string.Equals(
-                    slot.Type,
+            if (!slot.AllowedEquipmentTypes.Contains(
                     equipment.Type,
-                    StringComparison.Ordinal))
+                    StringComparer.Ordinal))
             {
                 throw new InvalidDataException(
                     $"Equipment '{equipment.Id}' is incompatible " +

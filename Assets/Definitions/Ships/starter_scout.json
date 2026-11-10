@@ -10,11 +10,15 @@
   "slots": [
     {
       "id": "main_engine",
-      "type": "engine"
+      "allowedEquipmentTypes": [
+        "engine"
+      ]
     },
     {
       "id": "fuel_tank",
-      "type": "fuel_tank"
+      "allowedEquipmentTypes": [
+        "fuel_tank"
+      ]
     }
   ]
 }

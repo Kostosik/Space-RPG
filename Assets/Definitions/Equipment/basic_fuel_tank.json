@@ -6,6 +6,7 @@
   "levels": [
     {
       "level": 1,
+      "basePrice": 1000,
       "stats": {
         "maxSpeedBonus": {
           "min": 0.0,
@@ -19,6 +20,7 @@
     },
     {
       "level": 2,
+      "basePrice": 1000,
       "stats": {
         "maxSpeedBonus": {
           "min": 0.0,
@@ -32,6 +34,7 @@
     },
     {
       "level": 3,
+      "basePrice": 1000,
       "stats": {
         "maxSpeedBonus": {
           "min": 0.0,
@@ -45,6 +48,7 @@
     },
     {
       "level": 4,
+      "basePrice": 1000,
       "stats": {
         "maxSpeedBonus": {
           "min": 0.0,
@@ -58,6 +62,7 @@
     },
     {
       "level": 5,
+      "basePrice": 1000,
       "stats": {
         "maxSpeedBonus": {
           "min": 0.0,

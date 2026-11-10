@@ -7,6 +7,7 @@ using Engine.UI.Assets;
 using GameProject.Content;
 using GameProject.Player;
 using GameProject.Ships;
+using GameProject.Shops;
 using System.Text.Json;
 
 namespace GameProject;
@@ -100,6 +101,11 @@ internal static class Program
                                 new JsonGameDefinitionContentLoader<EquipmentDefinition>(
                                     new DefinitionAssetFilter(
                                         "Definitions/Equipment",
+                                        ".json")));
+                            loaders.Register(
+                                new JsonGameDefinitionContentLoader<ShopDefinition>(
+                                    new DefinitionAssetFilter(
+                                        "Definitions/Shops",
                                         ".json")));
                         },
                         InputActions = inputActions,

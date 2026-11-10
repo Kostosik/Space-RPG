@@ -4,6 +4,8 @@ public sealed class EquipmentLevelDefinition
 {
     public int Level { get; init; }
 
+    public long BasePrice { get; init; }
+
     public EquipmentStatRanges Stats { get; init; } = new();
 }
 

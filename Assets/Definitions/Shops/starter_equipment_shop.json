@@ -1,0 +1,22 @@
+﻿{
+  "id": "starter_equipment_shop",
+  "name": "Starter Equipment Shop",
+  "purchasePriceMultiplier": 1.0,
+  "sellPriceMultiplier": 0.5,
+  "stock": [
+    {
+      "equipmentDefinitionId": "basic_engine",
+      "minLevel": 1,
+      "maxLevel": 3,
+      "minQuantity": 2,
+      "maxQuantity": 4
+    },
+    {
+      "equipmentDefinitionId": "basic_fuel_tank",
+      "minLevel": 1,
+      "maxLevel": 3,
+      "minQuantity": 1,
+      "maxQuantity": 3
+    }
+  ]
+}

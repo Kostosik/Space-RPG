@@ -17,6 +17,8 @@ public sealed class ShipEquipmentService
         ArgumentException.ThrowIfNullOrWhiteSpace(slotId);
         ArgumentNullException.ThrowIfNull(equipmentDefinitions);
 
+        ShipDefinitionValidator.Validate(shipDefinition);
+
         if (!string.Equals(
                 ship.ShipDefinitionId,
                 shipDefinition.Id,
@@ -66,10 +68,9 @@ public sealed class ShipEquipmentService
         if (slot is null)
             return EquipmentTransferResult.SlotNotFound;
 
-        if (!string.Equals(
-                slot.Type,
+        if (!slot.AllowedEquipmentTypes.Contains(
                 equipmentDefinition.Type,
-                StringComparison.Ordinal))
+                StringComparer.Ordinal))
         {
             return EquipmentTransferResult.IncompatibleSlot;
         }
@@ -84,7 +85,6 @@ public sealed class ShipEquipmentService
             return EquipmentTransferResult.EquipmentAlreadyInstalled;
         }
 
-        // Сначала забираем предмет из трюма.
         if (!ship.CargoHold.TryRemove(
                 equipmentInstanceId,
                 out var removedEquipment) ||
@@ -93,11 +93,9 @@ public sealed class ShipEquipmentService
             return EquipmentTransferResult.EquipmentNotFoundInCargoHold;
         }
 
-        // Затем устанавливаем его в слот.
         if (ship.TrySetEquipment(slot.Id, removedEquipment))
             return EquipmentTransferResult.Success;
 
-        // При неудаче возвращаем тот же экземпляр обратно.
         if (!ship.CargoHold.TryAdd(removedEquipment))
         {
             throw new InvalidOperationException(
@@ -135,11 +133,9 @@ public sealed class ShipEquipmentService
             return EquipmentTransferResult.EquipmentNotInstalled;
         }
 
-        // Снятый предмет попадает в трюм без изменения характеристик.
         if (ship.CargoHold.TryAdd(removedEquipment))
             return EquipmentTransferResult.Success;
 
-        // Если трюм отклонил предмет — восстанавливаем слот.
         if (!ship.TrySetEquipment(slotId, removedEquipment))
         {
             throw new InvalidOperationException(
