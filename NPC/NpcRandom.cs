@@ -2,11 +2,22 @@
 
 public sealed class NpcRandom
 {
+    private readonly int _rootSeed;
+
     private ulong _state;
 
     public NpcRandom(int seed)
     {
+        _rootSeed = seed;
         _state = unchecked((ulong)(uint)seed);
+    }
+
+    public NpcRandom Fork(string purpose)
+    {
+        return new NpcRandom(
+            NpcDeterminism.CreateDerivedSeed(
+                _rootSeed,
+                purpose));
     }
 
     public ulong NextUInt64()

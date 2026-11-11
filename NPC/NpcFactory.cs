@@ -21,61 +21,47 @@ public static class NpcFactory
 
         var options = new List<(ShipDefinition Ship, double Weight)>();
 
-        double totalWeight = 0.0;
-
-        foreach (var option in archetype.ShipOptions)
+        foreach (var option in archetype.ShipOptions
+                     .OrderBy(x => x.ShipDefinitionId, StringComparer.Ordinal))
         {
             if (!shipDefinitions.TryGetValue(
                     option.ShipDefinitionId,
-                    out var shipDefinition))
+                    out var definition))
             {
                 throw new InvalidDataException(
-                    $"NPC archetype '{archetype.Id}' references unknown ship " +
-                    $"'{option.ShipDefinitionId}'.");
+                    $"Unknown ship '{option.ShipDefinitionId}' " +
+                    $"in archetype '{archetype.Id}'.");
             }
 
-            ShipDefinitionValidator.Validate(shipDefinition);
+            ShipDefinitionValidator.Validate(definition);
 
-            if (!string.Equals(
-                    shipDefinition.Id,
-                    option.ShipDefinitionId,
-                    StringComparison.Ordinal))
-            {
-                throw new InvalidDataException(
-                    $"Ship definition ID mismatch: '{option.ShipDefinitionId}'.");
-            }
-
-            options.Add((shipDefinition, option.Weight));
-            totalWeight += option.Weight;
+            options.Add((definition, option.Weight));
         }
 
-        if (!double.IsFinite(totalWeight) || totalWeight <= 0.0)
-        {
-            throw new InvalidDataException(
-                $"NPC archetype '{archetype.Id}' has invalid total ship weight.");
-        }
-
-        var selectedShip = SelectShip(options, totalWeight, random);
+        var selectedShip = SelectShip(
+            options,
+            random.Fork("ship"));
 
         var fuelCapacity =
             selectedShip.BaseStats.FuelCapacity;
 
-        var fuelRatio = Sample(
-            archetype.StartingFuelRatio,
-            random);
-
         var initialFuel = (int)Math.Round(
-            fuelCapacity * fuelRatio,
+            fuelCapacity * Sample(
+                archetype.StartingFuelRatio,
+                random.Fork("fuel")),
             MidpointRounding.AwayFromZero);
 
         var personalityTraits =
             new Dictionary<string, float>(StringComparer.Ordinal);
 
-        foreach (var trait in archetype.PersonalityTraits)
+        foreach (var trait in archetype.PersonalityTraits
+                     .OrderBy(x => x.Key, StringComparer.Ordinal))
         {
             personalityTraits.Add(
                 trait.Key,
-                Sample(trait.Value, random));
+                Sample(
+                    trait.Value,
+                    random.Fork($"trait:{trait.Key}")));
         }
 
         var personality = new NpcPersonality(personalityTraits);
@@ -84,10 +70,14 @@ public static class NpcFactory
             selectedShip.Id,
             fuelCapacity,
             initialFuel,
-            Sample(archetype.StartingHullCondition, random));
+            Sample(
+                archetype.StartingHullCondition,
+                random.Fork("hull")));
 
         var economy = new NpcEconomyState(
-            Sample(archetype.StartingCredits, random));
+            Sample(
+                archetype.StartingCredits,
+                random.Fork("credits")));
 
         return new NpcState(
             identity,
@@ -100,16 +90,23 @@ public static class NpcFactory
 
     private static ShipDefinition SelectShip(
         IReadOnlyList<(ShipDefinition Ship, double Weight)> options,
-        double totalWeight,
         NpcRandom random)
     {
+        double totalWeight = options.Sum(x => x.Weight);
+
+        if (!double.IsFinite(totalWeight) || totalWeight <= 0)
+        {
+            throw new InvalidDataException(
+                "NPC ship options have invalid total weight.");
+        }
+
         var roll = random.NextDouble() * totalWeight;
 
         foreach (var option in options)
         {
             roll -= option.Weight;
 
-            if (roll < 0.0)
+            if (roll < 0)
                 return option.Ship;
         }
 

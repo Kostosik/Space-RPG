@@ -1,3 +1,4 @@
+using Engine.Content.Assets;
 using Engine.Core.Assets;
 using Engine.Core.Math;
 using Engine.Core.Systems;
@@ -15,9 +16,11 @@ using Engine.Serialization.SaveLoad.Ecs;
 using Engine.Serialization.SaveLoad.Worlds;
 using Engine.UI.Core;
 using Engine.UI.Styling;
+using GameProject.Content;
 using GameProject.Galaxy;
 using GameProject.Game;
 using GameProject.Game.Scenes;
+using GameProject.NPC;
 using GameProject.Player;
 using GameProject.Settings;
 using GameProject.Ships;
@@ -31,6 +34,15 @@ namespace GameProject;
 
 internal sealed class GameMain : EngineGame
 {
+    private FileContentCatalog? _npcDefinitionAssets;
+
+    private DefinitionCatalog<ShipDefinition>? _npcShipDefinitions;
+
+    private DefinitionCatalog<NpcArchetypeDefinition>? _npcArchetypes;
+
+    private NpcState? _hoveredNpc;
+
+    private DateTime _npcHoverStartedAt;
     private readonly DesktopGameHostContext _hostContext;
 
     private UiSystem? _ui;
@@ -190,7 +202,7 @@ internal sealed class GameMain : EngineGame
     {
         _session = GameSession.CreateNew(
                 WorldStartData.CreateNew(100));
-
+        InitializeNpcPopulation();
         if (_starterShipDefinition is null)
         {
             throw new InvalidOperationException(
@@ -567,6 +579,66 @@ internal sealed class GameMain : EngineGame
         }
     }
 
+    private NpcState? GetHoveredNpc()
+    {
+        if (_isGalaxyMapOpen ||
+    _shipWindow?.IsOpen == true ||
+    _landedObject is not null)
+        {
+            return null;
+        }
+
+        if (_pointerInput is null ||
+            _session is null)
+        {
+            return null;
+        }
+
+        var mouseWorldPosition =
+            Runtime.Services.Camera.ScreenToWorld(
+                _pointerInput.Position);
+
+        NpcState? closestNpc = null;
+        var bestDistanceSquared = double.MaxValue;
+
+        const double selectionRadius = 22.0;
+        const double selectionRadiusSquared =
+            selectionRadius * selectionRadius;
+
+        var currentSystemId =
+            _session.World.CurrentSystemId;
+
+        foreach (var npc in _session.World.Npcs.All)
+        {
+            var location = npc.Location;
+
+            if (!string.Equals(
+                    location.SystemId,
+                    currentSystemId,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var dx = mouseWorldPosition.X - location.X;
+            var dy = mouseWorldPosition.Y - location.Y;
+
+            var distanceSquared =
+                dx * dx + dy * dy;
+
+            if (distanceSquared > selectionRadiusSquared ||
+                distanceSquared >= bestDistanceSquared)
+            {
+                continue;
+            }
+
+            bestDistanceSquared = distanceSquared;
+            closestNpc = npc;
+        }
+
+        return closestNpc;
+    }
+
     private PlanetObject? GetHoveredPlanet()
     {
         if (_pointerInput is null || _session is null)
@@ -596,8 +668,77 @@ internal sealed class GameMain : EngineGame
         return null;
     }
 
+    private void DrawNpcTooltip()
+    {
+        if (_hoveredNpc is null)
+            return;
+
+        if ((DateTime.UtcNow - _npcHoverStartedAt).TotalSeconds
+            < PlanetHoverDelaySeconds)
+        {
+            return;
+        }
+
+        var graphics = Runtime.Services.Graphics;
+
+        const float panelWidth = 340.0f;
+        const float panelHeight = 130.0f;
+
+        var panelPosition = new Vector2(
+            Math.Max(24.0f, _hostContext.WindowWidth - panelWidth - 24.0f),
+            80.0f);
+
+        graphics.Submit(
+            new DrawUiRectangleCommand(
+                panelPosition,
+                new Vector2(panelWidth, panelHeight),
+                new UiColor(20, 25, 40, 230)));
+
+        graphics.Submit(
+            new DrawDebugTextCommand(
+                _hoveredNpc.Identity.Name,
+                new Vector2(
+                    panelPosition.X + 14.0f,
+                    panelPosition.Y + 14.0f),
+                new DebugColor(100, 210, 255),
+                1.8f,
+                DebugRenderSpace.Screen));
+
+        graphics.Submit(
+            new DrawDebugTextCommand(
+                $"CALLSIGN: {_hoveredNpc.Identity.Callsign ?? "UNKNOWN"}",
+                new Vector2(
+                    panelPosition.X + 14.0f,
+                    panelPosition.Y + 48.0f),
+                DebugColor.White,
+                1.2f,
+                DebugRenderSpace.Screen));
+
+        graphics.Submit(
+            new DrawDebugTextCommand(
+                $"TYPE: {_hoveredNpc.ArchetypeId.ToUpperInvariant()}",
+                new Vector2(
+                    panelPosition.X + 14.0f,
+                    panelPosition.Y + 73.0f),
+                DebugColor.White,
+                1.2f,
+                DebugRenderSpace.Screen));
+
+        graphics.Submit(
+            new DrawDebugTextCommand(
+                $"SHIP: {_hoveredNpc.Ship.ShipDefinitionId}",
+                new Vector2(
+                    panelPosition.X + 14.0f,
+                    panelPosition.Y + 98.0f),
+                DebugColor.White,
+                1.2f,
+                DebugRenderSpace.Screen));
+    }
+
     private void DrawPlanetTooltip()
     {
+        if (_hoveredNpc is not null)
+            return;
         if (!_settings.Gameplay.ShowPlanetTooltips ||
             _hoveredPlanet is null)
         {
@@ -663,6 +804,14 @@ internal sealed class GameMain : EngineGame
         {
             _hoveredPlanet = planetUnderCursor;
             _planetHoverStartedAt = DateTime.UtcNow;
+        }
+
+        var npcUnderCursor = GetHoveredNpc();
+
+        if (!ReferenceEquals(npcUnderCursor, _hoveredNpc))
+        {
+            _hoveredNpc = npcUnderCursor;
+            _npcHoverStartedAt = DateTime.UtcNow;
         }
         // Звёздное поле.
         foreach (var star in _stars)
@@ -731,6 +880,7 @@ internal sealed class GameMain : EngineGame
                     obj.VisualRadius,
                     color);
             }
+            DrawNpcShips(_session.World.CurrentSystemId);
         }
         var shipVisualScale =
             _shipMovementSystem?.LandingVisualScale ?? 1.0f;
@@ -981,7 +1131,7 @@ internal sealed class GameMain : EngineGame
         }
 
         DrawPlanetTooltip();
-
+        DrawNpcTooltip();
         graphics.Submit(
             new DrawDebugTextCommand(
                 $"DAY: {day} | {progress:P0} | " +
@@ -1337,6 +1487,15 @@ internal sealed class GameMain : EngineGame
             _shipWindow.Closed -= OnShipWindowClosed;
             _shipWindow = null;
         }
+
+        _npcArchetypes?.Dispose();
+        _npcArchetypes = null;
+
+        _npcShipDefinitions?.Dispose();
+        _npcShipDefinitions = null;
+
+        _npcDefinitionAssets = null;
+
         _worldSimulation?.Dispose();
         _worldSimulation = null;
         _turnExecution?.Dispose();
@@ -1389,6 +1548,61 @@ internal sealed class GameMain : EngineGame
         }
     }
 
+    private void InitializeNpcPopulation()
+    {
+        if (_session is null)
+        {
+            throw new InvalidOperationException(
+                "Game session was not created.");
+        }
+
+        _npcDefinitionAssets = new FileContentCatalog(
+            Path.Combine(
+                AppContext.BaseDirectory,
+                "Assets"));
+
+        _npcShipDefinitions =
+            new DefinitionCatalog<ShipDefinition>(
+                Runtime.Services.Content,
+                _npcDefinitionAssets,
+                new DefinitionAssetFilter(
+                    "Definitions/Ships",
+                    ".json"));
+
+        _npcArchetypes =
+            new DefinitionCatalog<NpcArchetypeDefinition>(
+                Runtime.Services.Content,
+                _npcDefinitionAssets,
+                new DefinitionAssetFilter(
+                    "Definitions/NPCArchetypes",
+                    ".json"));
+
+        _npcShipDefinitions.LoadAll();
+        _npcArchetypes.LoadAll();
+
+        var shipDefinitions =
+            new Dictionary<string, ShipDefinition>(
+                StringComparer.Ordinal);
+
+        foreach (var definition in _npcShipDefinitions.Definitions)
+        {
+            shipDefinitions.Add(
+                definition.Id,
+                definition);
+        }
+
+        var population = NpcPopulationGenerator.Generate(
+            _session.World.Seed,
+            _session.World.Galaxy,
+            _npcArchetypes.Definitions,
+            shipDefinitions);
+
+        _session.World.Npcs.AddRange(population);
+
+        Console.WriteLine(
+            $"Generated NPC population: {_session.World.Npcs.Count}");
+    }
+
     private static Vector2 AddScaled(
         Vector2 origin,
         Vector2 direction,
@@ -1397,6 +1611,102 @@ internal sealed class GameMain : EngineGame
         return new Vector2(
             origin.X + direction.X * scale,
             origin.Y + direction.Y * scale);
+    }
+
+    private void DrawNpcShips(string systemId)
+    {
+        if (_session is null)
+            return;
+
+        var graphics = Runtime.Services.Graphics;
+
+        foreach (var npc in _session.World.Npcs.All)
+        {
+            var location = npc.Location;
+
+            if (!string.Equals(
+                    location.SystemId,
+                    systemId,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var position = new Vector2(
+                (float)location.X,
+                (float)location.Y);
+
+            // Пока направление условное.
+            // Позднее оно станет частью состояния корабля.
+            var rotation =
+                MathF.Atan2(position.Y, position.X) +
+                MathF.PI * 0.5f;
+
+            var direction = new Vector2(
+                MathF.Cos(rotation),
+                MathF.Sin(rotation));
+
+            var perpendicular = new Vector2(
+                -direction.Y,
+                direction.X);
+
+            const float noseLength = 13.0f;
+            const float rearLength = 8.0f;
+            const float halfWidth = 6.0f;
+
+            var nose = AddScaled(
+                position,
+                direction,
+                noseLength);
+
+            var rearLeft = AddScaled(
+                AddScaled(
+                    position,
+                    direction,
+                    -rearLength),
+                perpendicular,
+                halfWidth);
+
+            var rearRight = AddScaled(
+                AddScaled(
+                    position,
+                    direction,
+                    -rearLength),
+                perpendicular,
+                -halfWidth);
+
+            var color = new DebugColor(100, 210, 255);
+
+            // Корпус.
+            graphics.Submit(
+                new DrawDebugLineCommand(
+                    nose,
+                    rearLeft,
+                    color,
+                    DebugRenderSpace.World));
+
+            graphics.Submit(
+                new DrawDebugLineCommand(
+                    rearLeft,
+                    rearRight,
+                    color,
+                    DebugRenderSpace.World));
+
+            graphics.Submit(
+                new DrawDebugLineCommand(
+                    rearRight,
+                    nose,
+                    color,
+                    DebugRenderSpace.World));
+
+            // Центральная линия.
+            graphics.Submit(
+                new DrawDebugLineCommand(
+                    position,
+                    nose,
+                    DebugColor.White,
+                    DebugRenderSpace.World));
+        }
     }
 
     private void DrawWorldCircle(
