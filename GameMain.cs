@@ -37,7 +37,8 @@ internal sealed class GameMain : EngineGame
     private FileContentCatalog? _npcDefinitionAssets;
 
     private DefinitionCatalog<ShipDefinition>? _npcShipDefinitions;
-
+    private IReadOnlyDictionary<string, ShipDefinition> _npcShipDefinitionsById =
+    new Dictionary<string, ShipDefinition>(StringComparer.Ordinal);
     private DefinitionCatalog<NpcArchetypeDefinition>? _npcArchetypes;
 
     private NpcState? _hoveredNpc;
@@ -301,7 +302,9 @@ internal sealed class GameMain : EngineGame
             TimeSpan.FromSeconds(4));
         _worldSimulation = new WorldSimulation(
             _session.World,
-            gameTime);
+            gameTime,
+            _npcShipDefinitionsById,
+            Runtime.EcsWorld);
 
         // Подключаем движение корабля к игровому времени.
         _shipMovementSystem?.AttachGameTime(gameTime);
@@ -1583,7 +1586,7 @@ internal sealed class GameMain : EngineGame
         var shipDefinitions =
             new Dictionary<string, ShipDefinition>(
                 StringComparer.Ordinal);
-
+        _npcShipDefinitionsById = shipDefinitions;
         foreach (var definition in _npcShipDefinitions.Definitions)
         {
             shipDefinitions.Add(
@@ -1638,9 +1641,7 @@ internal sealed class GameMain : EngineGame
 
             // Пока направление условное.
             // Позднее оно станет частью состояния корабля.
-            var rotation =
-                MathF.Atan2(position.Y, position.X) +
-                MathF.PI * 0.5f;
+            var rotation = npc.Movement.Rotation;
 
             var direction = new Vector2(
                 MathF.Cos(rotation),

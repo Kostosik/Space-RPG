@@ -2,6 +2,7 @@
 
 public sealed class NpcState
 {
+    public NpcMovementState Movement { get; } = new();
     public NpcState(
         NpcIdentity identity,
         string archetypeId,

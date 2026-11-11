@@ -19,6 +19,24 @@ internal static class NpcDeterminism
             $"npc|{worldSeed}|{systemId}|{npcIndex}|{purpose}");
     }
 
+    public static int CreateSeed(
+    int worldSeed,
+    Guid npcId,
+    string purpose)
+    {
+        if (npcId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "NPC ID cannot be empty.",
+                nameof(npcId));
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(purpose);
+
+        return HashToInt(
+            $"npc|{worldSeed}|{npcId:N}|{purpose}");
+    }
+
     public static int CreateDerivedSeed(
         int seed,
         string purpose)
