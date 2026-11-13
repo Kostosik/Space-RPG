@@ -1053,7 +1053,7 @@ internal sealed class GameMain : EngineGame
             DrawNpcShips(_session.World.CurrentSystemId);
         }
         var shipVisualScale =
-            _shipMovementSystem?.LandingVisualScale ?? 1.0f;
+            _shipMovementSystem?.TransitionVisualScale ?? 1.0f;
         // Геометрия корабля.
         var direction = new Vector2(
             MathF.Cos(ship.Rotation),
@@ -1439,12 +1439,10 @@ internal sealed class GameMain : EngineGame
                 break;
         }
 
-        _pendingGalaxyTravel = null;
-
-        _interstellarTravel?.Complete();
-
-        if (_shipMovementSystem is not null)
-            _shipMovementSystem.AcceptPointerCommands = true;
+        if (result != GalaxyJumpResult.Completed)
+        {
+            _shipMovementSystem?.CancelSystemExitAnimation();
+        }
 
         _session.Simulation.Time.SetSpeedMultiplier(
     Fixed32.One);
@@ -1462,7 +1460,10 @@ internal sealed class GameMain : EngineGame
     private void OnSystemExitReached()
     {
         if (_session is null ||
-            _pendingGalaxyJumpTargetSystemId is null)
+            _pendingGalaxyJumpTargetSystemId is null ||
+            _pendingGalaxyTravel is not null ||
+            _interstellarTravel is null ||
+            _interstellarTravel.IsActive)
         {
             return;
         }
@@ -1492,44 +1493,32 @@ internal sealed class GameMain : EngineGame
 
             _pendingGalaxyJumpTargetSystemId = null;
 
-            if (_shipMovementSystem is not null)
-                _shipMovementSystem.AcceptPointerCommands = true;
+            _shipMovementSystem?.CancelSystemExitAnimation();
 
             return;
         }
 
-        // Сбрасываем состояние удержания Space,
-        // но не сбрасываем скорость после этого.
         ClearEndTurnInputState();
 
         var gameTime = _session.Simulation.Time;
 
-        // Автоматическое ускорение во время гиперперехода.
+        _pendingGalaxyTravel = travel;
+        _pendingGalaxyJumpTargetSystemId = null;
+
         gameTime.SetSpeedMultiplier(
             Fixed32.FromInt(8));
 
-        // Запускаем путешествие.
-        _interstellarTravel?.Begin(travel.ArrivalTime);
+        _interstellarTravel.Begin(travel.ArrivalTime);
 
-        // Блокируем управление кораблём.
         if (_shipMovementSystem is not null)
         {
             _shipMovementSystem.AcceptPointerCommands = false;
         }
 
-        // Скрываем обычную игровую сцену.
+        _galaxyMapMessage = "HYPERSPACE TRANSIT";
+
         _sceneManager?.RequestScene(
             new InterstellarTravelScene());
-
-        _pendingGalaxyTravel = travel;
-        _pendingGalaxyJumpTargetSystemId = null;
-
-        _interstellarTravel?.Begin(travel.ArrivalTime);
-
-        if (_shipMovementSystem is not null)
-            _shipMovementSystem.AcceptPointerCommands = false;
-
-        _galaxyMapMessage = "HYPERSPACE TRANSIT: 2 DAYS";
     }
 
     private bool UpdateInterstellarTravel(TimeSnapshot time)

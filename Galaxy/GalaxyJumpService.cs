@@ -134,8 +134,20 @@ internal static class GalaxyJumpService
 
         var departureTime = session.Simulation.Time.Elapsed.Value;
 
-        var arrivalTime = departureTime.Add(
+        // Минимальная продолжительность путешествия.
+        var earliestArrivalTime = departureTime.Add(
             TimeSpan.FromDays(TravelDurationDays));
+
+        // Прибытие всегда должно происходить
+        // на границе игровых суток.
+        var ticksIntoDay =
+            earliestArrivalTime.Ticks % TimeSpan.TicksPerDay;
+
+        var arrivalTime = ticksIntoDay == 0
+            ? earliestArrivalTime
+            : earliestArrivalTime.Add(
+                TimeSpan.FromTicks(
+                    TimeSpan.TicksPerDay - ticksIntoDay));
 
         travel = new GalaxyJumpTravel(
             current.Id,

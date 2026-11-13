@@ -46,6 +46,13 @@ public sealed class PlayerShipMovementSystem :
 
     private const double LandingAnimationDurationDays = 0.25;
 
+    private const double SystemExitAnimationDurationDays = 0.25;
+
+    private bool _isSystemExitAnimating;
+    private bool _systemExitAnimationCompleted;
+    private double _systemExitAnimationElapsedDays;
+
+
     private bool _isLandingAnimating;
     private bool _landingAnimationCompleted;
     private StarSystemObject? _landingAnimationTarget;
@@ -75,24 +82,40 @@ public sealed class PlayerShipMovementSystem :
     private double _distanceTravelled;
 
     public bool HasActiveRoute =>
-        _path is not null || _isLandingAnimating;
+        _path is not null ||
+        _isLandingAnimating ||
+        _isSystemExitAnimating;
 
     public bool IsLandingAnimating => _isLandingAnimating;
 
-    public float LandingVisualScale
+    public float TransitionVisualScale
     {
         get
         {
+            if (_isSystemExitAnimating)
+            {
+                var progress = Math.Clamp(
+                    _systemExitAnimationElapsedDays /
+                    SystemExitAnimationDurationDays,
+                    0.0,
+                    1.0);
+
+                var eased = progress * progress *
+                            (3.0 - 2.0 * progress);
+
+                return (float)(1.0 - eased);
+            }
+
             if (!_isLandingAnimating)
                 return 1.0f;
 
-            var progress = Math.Clamp(
+            var landingProgress = Math.Clamp(
                 _landingAnimationElapsedDays /
                 LandingAnimationDurationDays,
                 0.0,
                 1.0);
 
-            return (float)(1.0 - progress);
+            return (float)(1.0 - landingProgress);
         }
     }
 
@@ -367,16 +390,17 @@ public sealed class PlayerShipMovementSystem :
 
         if (path.Length <= PathEpsilon)
         {
-            if (landingTarget is not null)
+            if (isSystemExitRoute)
+            {
+                BeginSystemExitAnimation(ref ship);
+            }
+            else if (landingTarget is not null)
             {
                 BeginLandingAnimation(landingTarget, ref ship);
             }
             else
             {
                 ClearPath();
-
-                if (isSystemExitRoute)
-                    SystemExitReached?.Invoke();
             }
 
             return true;
@@ -666,6 +690,56 @@ public sealed class PlayerShipMovementSystem :
         ship.HasDestination = true;
     }
 
+    private void BeginSystemExitAnimation(
+    ref PlayerShipComponent ship)
+    {
+        ClearPath();
+
+        _isSystemExitAnimating = true;
+        _systemExitAnimationCompleted = false;
+        _systemExitAnimationElapsedDays = 0.0;
+
+        ship.HasDestination = false;
+
+        AcceptPointerCommands = false;
+    }
+
+    private void AdvanceSystemExitAnimation(
+        double elapsedGameDays)
+    {
+        if (!_isSystemExitAnimating ||
+            _systemExitAnimationCompleted)
+        {
+            return;
+        }
+
+        _systemExitAnimationElapsedDays += elapsedGameDays;
+
+        if (_systemExitAnimationElapsedDays <
+            SystemExitAnimationDurationDays)
+        {
+            return;
+        }
+
+        _systemExitAnimationElapsedDays =
+            SystemExitAnimationDurationDays;
+
+        _systemExitAnimationCompleted = true;
+
+        // Только после завершения анимации
+        // начинаем межсистемный переход.
+        SystemExitReached?.Invoke();
+    }
+
+    public void CancelSystemExitAnimation()
+    {
+        if (!_isSystemExitAnimating)
+            return;
+
+        ClearPath();
+        AcceptPointerCommands = true;
+    }
+
     public bool TrySetSystemExitRoute(Vector2 target)
     {
         if (_disposed ||
@@ -736,6 +810,7 @@ public sealed class PlayerShipMovementSystem :
     {
         if (_disposed ||
             (!_isLandingAnimating &&
+             !_isSystemExitAnimating &&
              _path is null &&
              _pendingLandingTarget is not PlanetObject) ||
             !_world.Exists(_shipEntity) ||
@@ -756,6 +831,12 @@ public sealed class PlayerShipMovementSystem :
 
         ref var ship =
             ref _world.Get<PlayerShipComponent>(_shipEntity);
+
+        if (_isSystemExitAnimating)
+        {
+            AdvanceSystemExitAnimation(dayFraction);
+            return;
+        }
 
         // Во время посадки корабль уже не выполняет маршрут.
         if (_isLandingAnimating)
@@ -842,12 +923,14 @@ public sealed class PlayerShipMovementSystem :
 
         if (completedLanding is null)
         {
-            var completedSystemExit = _isSystemExitRoute;
-
-            ClearPath();
-
-            if (completedSystemExit)
-                SystemExitReached?.Invoke();
+            if (_isSystemExitRoute)
+            {
+                BeginSystemExitAnimation(ref ship);
+            }
+            else
+            {
+                ClearPath();
+            }
 
             return;
         }
@@ -923,6 +1006,9 @@ public sealed class PlayerShipMovementSystem :
         _landingAnimationStartPosition = default;
         _isSystemExitRoute = false;
         _landingAnimationElapsedDays = 0.0;
+        _isSystemExitAnimating = false;
+        _systemExitAnimationCompleted = false;
+        _systemExitAnimationElapsedDays = 0.0;
     }
 
     public void Dispose()
