@@ -1,6 +1,6 @@
 using Engine.Hosting.Desktop;
 using Engine.Input;
-using Engine.Runtime;
+using Engine.Hosting.Desktop.SilkNet;
 using Engine.Serialization.Content;
 using Engine.Serialization.UI;
 using Engine.UI.Assets;
@@ -34,38 +34,6 @@ internal static class Program
             new InputBinding("Keyboard.Enter"));
 
         inputActions.Bind(
-            ShipInputActions.Thrust,
-            new InputBinding("Keyboard.W"));
-
-        inputActions.Bind(
-            ShipInputActions.Thrust,
-            new InputBinding("Keyboard.Up"));
-
-        inputActions.Bind(
-            ShipInputActions.Reverse,
-            new InputBinding("Keyboard.S"));
-
-        inputActions.Bind(
-            ShipInputActions.Reverse,
-            new InputBinding("Keyboard.Down"));
-
-        inputActions.Bind(
-            ShipInputActions.TurnLeft,
-            new InputBinding("Keyboard.A"));
-
-        inputActions.Bind(
-            ShipInputActions.TurnLeft,
-            new InputBinding("Keyboard.Left"));
-
-        inputActions.Bind(
-            ShipInputActions.TurnRight,
-            new InputBinding("Keyboard.D"));
-
-        inputActions.Bind(
-            ShipInputActions.TurnRight,
-            new InputBinding("Keyboard.Right"));
-
-        inputActions.Bind(
             ShipInputActions.EndTurn,
             new InputBinding("Keyboard.Space"));
 
@@ -77,7 +45,7 @@ internal static class Program
             ShipInputActions.Shift,
             new InputBinding("Keyboard.ShiftRight"));
 
-        DesktopGameHost.Run(
+        SilkNetDesktopHost.Run(
             (DesktopGameHostContext context) => new GameMain(
                 context,
                 startupScenePath),

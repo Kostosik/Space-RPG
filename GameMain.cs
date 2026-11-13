@@ -26,6 +26,8 @@ using GameProject.Settings;
 using GameProject.Ships;
 using GameProject.Simulation;
 using GameProject.UI;
+using GameProject.UI.PlanetLanding;
+using GameProject.UI.PlanetLanding.Views;
 using GameProject.UI.Settings;
 using GameProject.UI.Ship;
 using GameProject.World;
@@ -71,6 +73,10 @@ internal sealed class GameMain : EngineGame
 
     private readonly ShipStatsCalculator _shipStatsCalculator = new();
 
+    private InterstellarTravelController? _interstellarTravel;
+
+    private GalaxyJumpTravel? _pendingGalaxyTravel;
+
     private string _galaxyMapMessage =
         "SELECT A STAR SYSTEM";
     private StarSystemObject? _landedObject;
@@ -90,12 +96,23 @@ internal sealed class GameMain : EngineGame
     private ShipWindow? _shipWindow;
 
     private readonly ShipWindowPresenter _shipWindowPresenter = new();
-
+    private readonly PlanetLandingPresenter _planetLandingPresenter = new();
     private bool _shipWindowOwnsPointerInput;
     private bool _previousAcceptPointerCommands;
 
     private Vector2[] _stars = [];
     private TurnExecutionController? _turnExecution;
+
+    private const double EndTurnHoldThresholdSeconds = 0.4;
+    private const int EndTurnHoldSpeedMultiplier = 4;
+
+    private bool _endTurnPressActive;
+    private bool _endTurnStartedWhilePaused;
+    private bool _endTurnStartedWithShift;
+    private bool _endTurnHoldActive;
+
+    private double _endTurnHeldSeconds;
+
     private PlanetObject? _hoveredPlanet;
     private DateTime _planetHoverStartedAt;
     private const double PlanetHoverDelaySeconds = 0.5;
@@ -308,11 +325,14 @@ internal sealed class GameMain : EngineGame
 
         // Подключаем движение корабля к игровому времени.
         _shipMovementSystem?.AttachGameTime(gameTime);
-
+        _interstellarTravel =
+    new InterstellarTravelController(gameTime);
         // Создаём контроллер исполнения приказов.
         _turnExecution = new TurnExecutionController(
             gameTime,
-            () => _shipMovementSystem?.HasActiveRoute == true);
+            () =>
+                _shipMovementSystem?.HasActiveRoute == true ||
+                _interstellarTravel?.IsActive == true);
 
         Runtime.Services.Camera.Zoom = 1.0f;
         Runtime.Services.Camera.Position =
@@ -360,11 +380,15 @@ internal sealed class GameMain : EngineGame
 
             renderGameplay: RenderGameplay,
 
-            drawLandingScreen: DrawPlanetScreen,
+            showPlanetLanding: ShowPlanetLandingScreen,
+            hidePlanetLanding: HidePlanetLandingScreen,
 
             takeOffFromPlanet: TakeOffFromPlanet,
             openSettings: () => _settingsWindow?.Show(),
-            exitGame: _hostContext.Close
+            exitGame: _hostContext.Close,
+            updateInterstellarTravel: UpdateInterstellarTravel,
+
+            drawInterstellarTravelScreen: DrawInterstellarTravelScreen
         );
 
         // Создаём менеджер сцен.
@@ -399,6 +423,16 @@ internal sealed class GameMain : EngineGame
 
         var gameTime = _session.Simulation.Time;
 
+        if (_pendingGalaxyTravel is not null &&
+    _interstellarTravel?.IsArrivalReady == true &&
+    gameTime.IsPaused)
+        {
+            ResetEndTurnInputState(gameTime);
+
+            CompletePendingGalaxyJump();
+            return;
+        }
+
         // После завершения посадки переключаем сцену,
         // но только когда игровой день полностью завершён.
         if (_pendingLandingTransition is not null &&
@@ -413,15 +447,23 @@ internal sealed class GameMain : EngineGame
             {
                 _shipMovementSystem.AcceptPointerCommands = false;
             }
-
+            ResetEndTurnInputState(gameTime);
             _sceneManager?.RequestScene(
                 new PlanetLandingScene());
 
             return;
         }
+
+        if (_interstellarTravel?.IsActive == true)
+        {
+            UpdateEndTurnInput(time, gameTime);
+            return;
+        }
+
         // Завершаем гиперпереход только после остановки игровых суток.
         if (_galaxyJumpRouteCompleted && gameTime.IsPaused)
         {
+            ResetEndTurnInputState(gameTime);
             CompletePendingGalaxyJump();
             return;
         }
@@ -430,28 +472,18 @@ internal sealed class GameMain : EngineGame
         {
             ToggleShipWindow();
         }
-        var endTurnPressed =
-            Runtime.Services.Input.IsPressed(
-                ShipInputActions.EndTurn);
-
-        var shiftHeld =
-            Runtime.Services.Input.IsDown(
-                ShipInputActions.Shift);
-
-        // Во время исполнения дня разрешаем только
-        // запрос остановки через Space.
         if (!gameTime.IsPaused)
         {
-            if (endTurnPressed)
-            {
-                _turnExecution?.PressEndTurn(shiftHeld);
-            }
-
+            UpdateEndTurnInput(time, gameTime);
             return;
         }
+
         if (_shipWindow?.IsOpen == true)
             return;
-        // Ниже доступно управление только на паузе.
+
+        // Ниже остаётся существующая обработка
+        // карты галактики и остальных команд.
+
         if (Runtime.Services.Input.IsPressed(
                 ShipInputActions.ToggleGalaxyMap))
         {
@@ -478,10 +510,99 @@ internal sealed class GameMain : EngineGame
             return;
         }
 
-        if (endTurnPressed)
+        UpdateEndTurnInput(time, gameTime);
+    }
+
+    private void UpdateEndTurnInput(
+    TimeSnapshot frameTime,
+    GameTime gameTime)
+    {
+        var input = Runtime.Services.Input;
+
+        var action = ShipInputActions.EndTurn;
+
+        var isPressed = input.IsPressed(action);
+        var isDown = input.IsDown(action);
+
+        if (isPressed)
         {
-            _turnExecution?.PressEndTurn(shiftHeld);
+            _endTurnPressActive = true;
+
+            _endTurnStartedWhilePaused =
+                gameTime.IsPaused;
+
+            _endTurnStartedWithShift =
+                input.IsDown(ShipInputActions.Shift);
+
+            _endTurnHoldActive = false;
+            _endTurnHeldSeconds = 0.0;
+
+            // При обычном нажатии сразу запускаем время.
+            if (_endTurnStartedWhilePaused)
+            {
+                _turnExecution?.PressEndTurn(
+                    _endTurnStartedWithShift);
+            }
         }
+
+        if (!_endTurnPressActive)
+            return;
+
+        // Считаем реальное время удержания клавиши.
+        if (isDown && !_endTurnStartedWithShift)
+        {
+            _endTurnHeldSeconds += Math.Max(
+                0.0,
+                frameTime.Delta.TotalSeconds);
+
+            if (!_endTurnHoldActive &&
+                _endTurnHeldSeconds >= EndTurnHoldThresholdSeconds)
+            {
+                _endTurnHoldActive = true;
+
+                _turnExecution?.BeginHoldToAdvance();
+
+                gameTime.SetSpeedMultiplier(
+                    Fixed32.FromInt(EndTurnHoldSpeedMultiplier));
+            }
+        }
+
+        // Отпускание клавиши.
+        if (input.IsReleased(action) || !isDown)
+        {
+            if (_endTurnHoldActive)
+            {
+                gameTime.SetSpeedMultiplier(Fixed32.One);
+
+                _turnExecution?.EndHoldToAdvance();
+            }
+            else if (!_endTurnStartedWhilePaused)
+            {
+                // Короткое нажатие во время исполнения дня:
+                // остановиться на ближайшей границе суток.
+                _turnExecution?.RequestStopAtEndOfDay();
+            }
+
+            ClearEndTurnInputState();
+        }
+    }
+
+    private void ClearEndTurnInputState()
+    {
+        _endTurnPressActive = false;
+        _endTurnStartedWhilePaused = false;
+        _endTurnStartedWithShift = false;
+        _endTurnHoldActive = false;
+        _endTurnHeldSeconds = 0.0;
+    }
+
+    private void ResetEndTurnInputState(GameTime gameTime)
+    {
+        gameTime.SetSpeedMultiplier(Fixed32.One);
+
+        _turnExecution?.CancelHoldToAdvance();
+
+        ClearEndTurnInputState();
     }
 
     private void TryGalaxyJump()
@@ -534,7 +655,12 @@ internal sealed class GameMain : EngineGame
 
         _isGalaxyMapOpen = false;
 
-        _shipMovementSystem.AcceptPointerCommands = true;
+        // При мгновенном достижении точки выхода
+        // путешествие уже могло начаться.
+        if (_pendingGalaxyTravel is null)
+        {
+            _shipMovementSystem.AcceptPointerCommands = true;
+        }
     }
 
     private void OnLandingCompleted(
@@ -542,9 +668,16 @@ internal sealed class GameMain : EngineGame
     {
         _pendingLandingTransition = landingObject;
 
-        // Не обрываем игровой день.
-        // Просим TurnExecutionController остановиться на его границе.
-        _turnExecution?.RequestStopAtEndOfDay();
+        if (_session is null)
+            return;
+
+        var gameTime = _session.Simulation.Time;
+
+        // Сбрасываем ускорение и состояние удержания Space.
+        ResetEndTurnInputState(gameTime);
+
+        // Посадка завершена — немедленно останавливаем симуляцию.
+        gameTime.Pause();
     }
 
     private void TakeOffFromPlanet()
@@ -555,6 +688,40 @@ internal sealed class GameMain : EngineGame
 
         // Время остаётся на паузе.
         // Игрок сам решит, когда продолжить ход.
+    }
+
+    private void ShowPlanetLandingScreen(
+    Action takeOff)
+    {
+        ArgumentNullException.ThrowIfNull(takeOff);
+
+        var ui = _ui
+            ?? throw new InvalidOperationException(
+                "UI system is not initialized.");
+
+        var landedObject = _landedObject
+            ?? throw new InvalidOperationException(
+                "There is no landed object.");
+
+        var viewData = _planetLandingPresenter.CreateViewData(
+            landedObject);
+
+        IPlanetLandingView[] views =
+        [
+            new PlanetOverviewView(viewData)
+        ];
+
+        var screen = new PlanetLandingScreen(
+            viewData,
+            views,
+            takeOff);
+
+        ui.Screens.Replace(screen);
+    }
+
+    private void HidePlanetLandingScreen()
+    {
+        _ui?.Screens.Clear();
     }
 
     private void HandleGalaxyMapInput()
@@ -1102,8 +1269,15 @@ internal sealed class GameMain : EngineGame
         var progress = gameTime?.DayProgress ?? 0.0;
 
         var routeInfo = "NO ROUTE";
-        if (_galaxyJumpRouteCompleted)
-            routeInfo = "JUMP POINT REACHED";
+        if (_pendingGalaxyTravel is { } travel &&
+            gameTime is not null)
+        {
+            var remaining =
+                travel.ArrivalTime - gameTime.Elapsed.Value;
+
+            routeInfo =
+                $"HYPERSPACE: {Math.Max(0.0, remaining.TotalDays):0.0} DAYS";
+        }
         if (path is not null && ship.MaxSpeed > 0.0f)
         {
             var remainingRoute = Math.Max(
@@ -1234,26 +1408,22 @@ internal sealed class GameMain : EngineGame
     private void CompletePendingGalaxyJump()
     {
         if (_session is null ||
-            _pendingGalaxyJumpTargetSystemId is null)
+            _pendingGalaxyTravel is null)
         {
-            _galaxyJumpRouteCompleted = false;
-            _pendingGalaxyJumpTargetSystemId = null;
             return;
         }
 
-        var targetSystemId =
-            _pendingGalaxyJumpTargetSystemId;
+        var travel = _pendingGalaxyTravel;
 
-        var result = GalaxyJumpService.Execute(
+        var result = GalaxyJumpService.CompleteTravel(
             _session,
             _shipMovementSystem,
-            targetSystemId,
-            GalaxyJumpFuelCost);
+            travel);
 
         switch (result)
         {
             case GalaxyJumpResult.Completed:
-                _galaxyMapMessage = "HYPERSPACE JUMP COMPLETE";
+                _galaxyMapMessage = "HYPERSPACE ARRIVAL COMPLETE";
                 break;
 
             case GalaxyJumpResult.TargetNotFound:
@@ -1264,17 +1434,24 @@ internal sealed class GameMain : EngineGame
                 _galaxyMapMessage = "NO HYPERSPACE CONNECTION";
                 break;
 
-            case GalaxyJumpResult.NotEnoughFuel:
-                _galaxyMapMessage = "NOT ENOUGH FUEL";
-                break;
-
             default:
                 _galaxyMapMessage = "JUMP FAILED";
                 break;
         }
 
-        _pendingGalaxyJumpTargetSystemId = null;
-        _galaxyJumpRouteCompleted = false;
+        _pendingGalaxyTravel = null;
+
+        _interstellarTravel?.Complete();
+
+        if (_shipMovementSystem is not null)
+            _shipMovementSystem.AcceptPointerCommands = true;
+
+        _session.Simulation.Time.SetSpeedMultiplier(
+    Fixed32.One);
+
+        _pendingGalaxyTravel = null;
+
+        _interstellarTravel?.Complete();
 
         if (_shipMovementSystem is not null)
         {
@@ -1284,13 +1461,206 @@ internal sealed class GameMain : EngineGame
 
     private void OnSystemExitReached()
     {
-        if (_pendingGalaxyJumpTargetSystemId is null)
+        if (_session is null ||
+            _pendingGalaxyJumpTargetSystemId is null)
+        {
+            return;
+        }
+
+        var result = GalaxyJumpService.BeginTravel(
+            _session,
+            _pendingGalaxyJumpTargetSystemId,
+            GalaxyJumpFuelCost,
+            out var travel);
+
+        if (result != GalaxyJumpResult.TravelStarted ||
+            travel is null)
+        {
+            _galaxyMapMessage = result switch
+            {
+                GalaxyJumpResult.TargetNotFound =>
+                    "TARGET SYSTEM NOT FOUND",
+
+                GalaxyJumpResult.NoConnection =>
+                    "NO HYPERSPACE CONNECTION",
+
+                GalaxyJumpResult.NotEnoughFuel =>
+                    "NOT ENOUGH FUEL",
+
+                _ => "JUMP FAILED"
+            };
+
+            _pendingGalaxyJumpTargetSystemId = null;
+
+            if (_shipMovementSystem is not null)
+                _shipMovementSystem.AcceptPointerCommands = true;
+
+            return;
+        }
+
+        // Сбрасываем состояние удержания Space,
+        // но не сбрасываем скорость после этого.
+        ClearEndTurnInputState();
+
+        var gameTime = _session.Simulation.Time;
+
+        // Автоматическое ускорение во время гиперперехода.
+        gameTime.SetSpeedMultiplier(
+            Fixed32.FromInt(8));
+
+        // Запускаем путешествие.
+        _interstellarTravel?.Begin(travel.ArrivalTime);
+
+        // Блокируем управление кораблём.
+        if (_shipMovementSystem is not null)
+        {
+            _shipMovementSystem.AcceptPointerCommands = false;
+        }
+
+        // Скрываем обычную игровую сцену.
+        _sceneManager?.RequestScene(
+            new InterstellarTravelScene());
+
+        _pendingGalaxyTravel = travel;
+        _pendingGalaxyJumpTargetSystemId = null;
+
+        _interstellarTravel?.Begin(travel.ArrivalTime);
+
+        if (_shipMovementSystem is not null)
+            _shipMovementSystem.AcceptPointerCommands = false;
+
+        _galaxyMapMessage = "HYPERSPACE TRANSIT: 2 DAYS";
+    }
+
+    private bool UpdateInterstellarTravel(TimeSnapshot time)
+    {
+        _ = time;
+
+        if (_session is null)
+            return true;
+
+        var gameTime = _session.Simulation.Time;
+        var input = Runtime.Services.Input;
+
+        // Позволяем остановить или продолжить путешествие пробелом.
+        if (input.IsPressed(ShipInputActions.EndTurn))
+        {
+            _turnExecution?.PressEndTurn(
+                input.IsDown(ShipInputActions.Shift));
+        }
+
+        if (_pendingGalaxyTravel is null)
+            return true;
+
+        if (_interstellarTravel?.IsArrivalReady != true ||
+            !gameTime.IsPaused)
+        {
+            return false;
+        }
+
+        ClearEndTurnInputState();
+
+        CompletePendingGalaxyJump();
+
+        return true;
+    }
+
+    private void DrawInterstellarTravelScreen()
+    {
+        var graphics = Runtime.Services.Graphics;
+
+        var travel = _pendingGalaxyTravel;
+
+        graphics.Submit(
+            new DrawUiRectangleCommand(
+                new Vector2(0, 0),
+                new Vector2(1280, 720),
+                new UiColor(3, 7, 22, 255)));
+
+        graphics.Submit(
+            new DrawUiRectangleCommand(
+                new Vector2(140, 160),
+                new Vector2(1000, 400),
+                new UiColor(8, 22, 43, 255)));
+
+        graphics.Submit(
+            new DrawDebugTextCommand(
+                "HYPERSPACE TRANSIT",
+                new Vector2(420, 230),
+                DebugColor.White,
+                2.5f,
+                DebugRenderSpace.Screen));
+
+        if (travel is null || _session is null)
             return;
 
-        _galaxyJumpRouteCompleted = true;
+        var gameTime = _session.Simulation.Time;
 
-        _galaxyMapMessage =
-            $"JUMP POINT REACHED: {_pendingGalaxyJumpTargetSystemId.ToUpperInvariant()}";
+        var durationTicks =
+            (travel.ArrivalTime - travel.DepartureTime).Ticks;
+
+        var elapsedTicks =
+            (gameTime.Elapsed.Value - travel.DepartureTime).Ticks;
+
+        var progress = durationTicks <= 0
+            ? 1.0
+            : Math.Clamp(
+                (double)elapsedTicks / durationTicks,
+                0.0,
+                1.0);
+
+        var percent = (int)Math.Round(progress * 100.0);
+
+        graphics.Submit(
+            new DrawDebugTextCommand(
+                $"ORIGIN: {travel.SourceSystemId.ToUpperInvariant()}",
+                new Vector2(300, 320),
+                DebugColor.White,
+                1.5f,
+                DebugRenderSpace.Screen));
+
+        graphics.Submit(
+            new DrawDebugTextCommand(
+                $"DESTINATION: {travel.DestinationSystemId.ToUpperInvariant()}",
+                new Vector2(300, 365),
+                DebugColor.White,
+                1.5f,
+                DebugRenderSpace.Screen));
+
+        // Фон прогресс-бара.
+        graphics.Submit(
+            new DrawUiRectangleCommand(
+                new Vector2(300, 435),
+                new Vector2(680, 12),
+                new UiColor(28, 48, 72, 255)));
+
+        // Прогресс путешествия.
+        if (progress > 0)
+        {
+            graphics.Submit(
+                new DrawUiRectangleCommand(
+                    new Vector2(300, 435),
+                    new Vector2(
+                        (float)(680 * progress),
+                        12),
+                    new UiColor(50, 170, 230, 255)));
+        }
+
+        graphics.Submit(
+            new DrawDebugTextCommand(
+                $"TRANSIT PROGRESS: {percent}%",
+                new Vector2(510, 475),
+                DebugColor.White,
+                1.5f,
+                DebugRenderSpace.Screen));
+
+        graphics.Submit(
+            new DrawDebugTextCommand(
+                "SPACE: PAUSE AT END OF DAY / RESUME",
+                new Vector2(350, 530),
+                DebugColor.White,
+                1.0f,
+                DebugRenderSpace.Screen));
     }
 
     protected override void OnRender(double interpolationAlpha)
@@ -1299,95 +1669,6 @@ internal sealed class GameMain : EngineGame
 
         _ui?.Render();
     }
-
-    private void DrawPlanetScreen()
-    {
-        var graphics = Runtime.Services.Graphics;
-
-        graphics.Submit(
-            new DrawUiRectangleCommand(
-                new Vector2(0, 0),
-                new Vector2(1280, 720),
-                new UiColor(4, 10, 24, 255)));
-
-        graphics.Submit(
-            new DrawUiRectangleCommand(
-                new Vector2(54, 45),
-                new Vector2(1172, 630),
-                new UiColor(9, 25, 43, 255)));
-
-        graphics.Submit(
-            new DrawUiRectangleCommand(
-                new Vector2(78, 72),
-                new Vector2(1124, 62),
-                new UiColor(20, 64, 90, 255)));
-
-        var name = _landedObject?.Name ?? "UNKNOWN";
-
-        var objectType = _landedObject switch
-        {
-            PlanetObject => "PLANETARY SURFACE",
-            StationObject => "SPACE STATION",
-            _ => "UNKNOWN LOCATION"
-        };
-
-        var description = _landedObject switch
-        {
-            PlanetObject planet => planet.Description,
-            StationObject station => station.Description,
-            _ => "No information available."
-        };
-
-        DrawLandingText(
-            "LANDING CONFIRMED",
-            new Vector2(100, 90),
-            new DebugColor(110, 220, 255),
-            2.0f);
-
-        DrawLandingText(
-            name.ToUpperInvariant(),
-            new Vector2(100, 190),
-            DebugColor.White,
-            3.0f);
-
-        DrawLandingText(
-            objectType,
-            new Vector2(100, 250),
-            new DebugColor(100, 200, 255),
-            1.8f);
-
-        DrawLandingText(
-            description,
-            new Vector2(100, 315),
-            new DebugColor(190, 210, 225),
-            1.5f);
-
-        DrawLandingText(
-            "SHIP STATUS: LANDED",
-            new Vector2(100, 430),
-            new DebugColor(100, 255, 170),
-            1.8f);
-
-        DrawLandingText(
-            "Planetary services will be available here.",
-            new Vector2(100, 475),
-            new DebugColor(150, 180, 205),
-            1.4f);
-
-        // Кнопка взлёта.
-        graphics.Submit(
-            new DrawUiRectangleCommand(
-                new Vector2(500, 590),
-                new Vector2(280, 64),
-                new UiColor(24, 100, 130, 255)));
-
-        DrawLandingText(
-            "TAKE OFF",
-            new Vector2(585, 610),
-            DebugColor.White,
-            2.0f);
-    }
-
     private void ToggleShipWindow()
     {
         if (_shipWindow is null ||
@@ -1461,21 +1742,6 @@ internal sealed class GameMain : EngineGame
         _shipWindow.Refresh(viewData);
     }
 
-    private void DrawLandingText(
-        string text,
-        Vector2 position,
-        DebugColor color,
-        float scale)
-    {
-        Runtime.Services.Graphics.Submit(
-            new DrawDebugTextCommand(
-                text,
-                position,
-                color,
-                scale,
-                DebugRenderSpace.Screen));
-    }
-
     protected override void OnFixedUpdate(SimulationTime time)
     {
         _session?.Simulation.FixedUpdate(time);
@@ -1483,6 +1749,12 @@ internal sealed class GameMain : EngineGame
 
     protected override void OnShutdown()
     {
+        _interstellarTravel?.Dispose();
+        _interstellarTravel = null;
+        _interstellarTravel?.Dispose();
+        _interstellarTravel = null;
+        _pendingGalaxyTravel = null;
+
         _shipWindow?.Close();
 
         if (_shipWindow is not null)

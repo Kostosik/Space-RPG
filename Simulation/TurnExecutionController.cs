@@ -5,7 +5,7 @@ public sealed class TurnExecutionController : IDisposable
 {
     private readonly GameTime _time;
     private readonly Func<bool> _hasPendingOrders;
-
+    private bool _holdToAdvance;
     private bool _stopAtEndOfDay;
     private bool _disposed;
 
@@ -22,6 +22,37 @@ public sealed class TurnExecutionController : IDisposable
         _time.DayCompleted += OnDayCompleted;
     }
 
+    public void BeginHoldToAdvance()
+    {
+        if (_disposed)
+            return;
+
+        _holdToAdvance = true;
+        _stopAtEndOfDay = false;
+
+        if (_time.IsPaused)
+            _time.Resume();
+    }
+
+    public void EndHoldToAdvance()
+    {
+        if (_disposed)
+            return;
+
+        _holdToAdvance = false;
+
+        if (!_time.IsPaused)
+            _stopAtEndOfDay = true;
+    }
+
+    public void CancelHoldToAdvance()
+    {
+        if (_disposed)
+            return;
+
+        _holdToAdvance = false;
+    }
+
     public void PressEndTurn(bool shiftHeld)
     {
         if (_disposed)
@@ -31,7 +62,7 @@ public sealed class TurnExecutionController : IDisposable
         {
             // Shift + Space: выполнить ровно один день.
             _stopAtEndOfDay = shiftHeld;
-
+            _holdToAdvance = false;
             _time.Resume();
             return;
         }
@@ -49,10 +80,12 @@ public sealed class TurnExecutionController : IDisposable
 
     private void OnDayCompleted(GameDayCompleted completed)
     {
-        if (_stopAtEndOfDay || !_hasPendingOrders())
+        if (_stopAtEndOfDay ||
+            (!_holdToAdvance && !_hasPendingOrders()))
         {
             _time.Pause();
             _stopAtEndOfDay = false;
+            _holdToAdvance = false;
         }
     }
 

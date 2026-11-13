@@ -12,25 +12,39 @@ public sealed class GameSceneContext
         Action enterGameplay,
         Action<TimeSnapshot> updateGameplay,
         Action<double> renderGameplay,
-        Action drawLandingScreen,
+        Action<Action> showPlanetLanding,
+        Action hidePlanetLanding,
         Action takeOffFromPlanet,
         Action openSettings,
-        Action exitGame)
+        Action exitGame, Func<TimeSnapshot, bool> updateInterstellarTravel,
+        Action drawInterstellarTravelScreen)
     {
         Runtime = runtime;
         PointerInput = pointerInput;
+
         ExitGame = exitGame;
         EnterGameplay = enterGameplay;
         UpdateGameplay = updateGameplay;
         RenderGameplay = renderGameplay;
-        DrawLandingScreen = drawLandingScreen;
+
+        ShowPlanetLanding = showPlanetLanding;
+        HidePlanetLanding = hidePlanetLanding;
+
         TakeOffFromPlanet = takeOffFromPlanet;
         OpenSettings = openSettings;
+        UpdateInterstellarTravel = updateInterstellarTravel;
+        DrawInterstellarTravelScreen = drawInterstellarTravelScreen;
     }
-    internal Action OpenSettings { get; }
+
+    internal Func<TimeSnapshot, bool> UpdateInterstellarTravel { get; }
+
+    internal Action DrawInterstellarTravelScreen { get; }
+
     public EngineRuntime Runtime { get; }
-    internal Action ExitGame { get; }
+
     public IPointerInput? PointerInput { get; }
+
+    internal Action ExitGame { get; }
 
     internal Action EnterGameplay { get; }
 
@@ -38,7 +52,11 @@ public sealed class GameSceneContext
 
     internal Action<double> RenderGameplay { get; }
 
-    internal Action DrawLandingScreen { get; }
+    internal Action<Action> ShowPlanetLanding { get; }
+
+    internal Action HidePlanetLanding { get; }
 
     internal Action TakeOffFromPlanet { get; }
+
+    internal Action OpenSettings { get; }
 }

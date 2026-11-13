@@ -7,7 +7,7 @@ namespace GameProject.Simulation;
 public sealed class GameTime
 {
     private const long TicksPerDay = TimeSpan.TicksPerDay;
-
+    private TimeSpan? _scheduledPauseAt;
     private Duration _elapsed = Duration.Zero;
     private decimal _fractionalTicks;
 
@@ -120,6 +120,24 @@ public sealed class GameTime
                 remainingTicks,
                 ticksToBoundary);
 
+            if (_scheduledPauseAt is { } scheduledPause)
+            {
+                var ticksToStop =
+                    scheduledPause.Ticks -
+                    _elapsed.Value.Ticks;
+
+                if (ticksToStop <= 0)
+                {
+                    _scheduledPauseAt = null;
+                    Pause();
+                    break;
+                }
+
+                stepTicks = Math.Min(
+                    stepTicks,
+                    ticksToStop);
+            }
+
             var step = new Duration(
                 TimeSpan.FromTicks(stepTicks));
 
@@ -133,6 +151,13 @@ public sealed class GameTime
                     previous,
                     _elapsed,
                     step));
+
+            if (_scheduledPauseAt is { } pauseAtAfterAdvance &&
+                _elapsed.Value >= pauseAtAfterAdvance)
+            {
+                _scheduledPauseAt = null;
+                Pause();
+            }
 
             // Граница суток должна обрабатываться,
             // даже если один из обработчиков поставил игру на паузу.
@@ -149,7 +174,27 @@ public sealed class GameTime
         }
     }
 
+    public void SchedulePauseAt(TimeSpan absoluteTime)
+    {
+        if (absoluteTime < _elapsed.Value)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(absoluteTime));
+        }
 
+        _scheduledPauseAt = absoluteTime;
+
+        if (absoluteTime == _elapsed.Value)
+        {
+            _scheduledPauseAt = null;
+            Pause();
+        }
+    }
+
+    public void ClearScheduledPause()
+    {
+        _scheduledPauseAt = null;
+    }
     private void AdvanceFractional(decimal ticks)
     {
         _fractionalTicks += ticks;
