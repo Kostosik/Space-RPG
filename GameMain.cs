@@ -14,6 +14,7 @@ using Engine.Runtime;
 using Engine.Runtime.Scenes;
 using Engine.Serialization.SaveLoad.Ecs;
 using Engine.Serialization.SaveLoad.Worlds;
+using Engine.Tooling.Profiling;
 using Engine.UI.Core;
 using Engine.UI.Styling;
 using GameProject.Content;
@@ -36,6 +37,8 @@ namespace GameProject;
 
 internal sealed class GameMain : EngineGame
 {
+    private readonly Profiler _profiler = new();
+
     private FileContentCatalog? _npcDefinitionAssets;
 
     private DefinitionCatalog<ShipDefinition>? _npcShipDefinitions;
@@ -401,16 +404,24 @@ internal sealed class GameMain : EngineGame
 
     protected override void OnUpdate(TimeSnapshot time)
     {
-        var settingsWasOpen = _settingsWindow?.IsOpen == true;
+        using var gameUpdateScope =
+            _profiler.BeginScope("Game.Update");
 
-        _ui?.Update(time.Delta.TotalSeconds);
+        var settingsWasOpen =
+            _settingsWindow?.IsOpen == true;
 
-        // Ќе передаЄм текущий клик главному меню,
-        // если в начале кадра было открыто окно настроек.
+        using (_profiler.BeginScope("UI.Update"))
+        {
+            _ui?.Update(time.Delta.TotalSeconds);
+        }
+
         if (settingsWasOpen)
             return;
 
-        _sceneManager?.Update(time);
+        using (_profiler.BeginScope("Scene.Update"))
+        {
+            _sceneManager?.Update(time);
+        }
     }
 
 
@@ -1654,10 +1665,65 @@ internal sealed class GameMain : EngineGame
 
     protected override void OnRender(double interpolationAlpha)
     {
-        _sceneManager?.Render(interpolationAlpha);
+        using (_profiler.BeginScope("Scene.Render"))
+        {
+            _sceneManager?.Render(interpolationAlpha);
+        }
 
-        _ui?.Render();
+        using (_profiler.BeginScope("UI.Render"))
+        {
+            _ui?.Render();
+        }
+
+        DrawProfilerOverlay();
+
+        _profiler.RecordFrame();
     }
+
+    private void DrawProfilerOverlay()
+    {
+        var graphics = Runtime.Services.Graphics;
+        const float fontSize = 20f;
+        const float lineHeight = 26f;
+        const float padding = 16f;
+
+        var x = 20f;
+        var y = 20f;
+
+        void DrawInfo(string text, float size = fontSize)
+        {
+            graphics.Submit(new DrawUiTextCommand(
+                text,
+                _gameFont,
+                new Vector2(x, y),
+                size,
+                UiColor.White));
+
+            y += lineHeight;
+        }
+
+        DrawInfo("PROFILER", 24f);
+        DrawInfo($"FPS: {_profiler.FramesPerSecond:F0}");
+        DrawInfo($"Frame: {_profiler.LastFrameTime.ToString():F2} ms");
+
+        DrawInfo("");
+
+        DrawMetric("Game.Update");
+        DrawMetric("UI.Update");
+        DrawMetric("Scene.Update");
+        DrawMetric("Scene.Render");
+        DrawMetric("UI.Render");
+
+        DrawInfo("");
+        DrawInfo($"Memory: {GC.GetTotalMemory(false) / 1024 / 1024} MB");
+
+        void DrawMetric(string name)
+        {
+            if (_profiler.TryGetMetric(name, out var metric))
+                DrawInfo($"{name}: {metric.Value:F2} ms");
+        }
+    }
+
     private void ToggleShipWindow()
     {
         if (_shipWindow is null ||
