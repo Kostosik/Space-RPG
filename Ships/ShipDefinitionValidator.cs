@@ -19,7 +19,8 @@ public static class ShipDefinitionValidator
         if (definition.BaseStats is null ||
             !float.IsFinite(definition.BaseStats.MaxSpeed) ||
             definition.BaseStats.MaxSpeed <= 0.0f ||
-            definition.BaseStats.FuelCapacity <= 0)
+            definition.BaseStats.FuelCapacity <= 0 || 
+            definition.BaseStats.TradeGoodsCapacity <= 0)
         {
             throw new InvalidDataException(
                 $"Ship '{definition.Id}' has invalid base statistics.");

@@ -52,7 +52,7 @@ public sealed class GameSession
     {
         return new GameSession(
             Guid.NewGuid(),
-            new PlayerState(),
+            new PlayerState(initialCredits: 5000),
             WorldState.Create(worldStartData),
             new SimulationState());
     }

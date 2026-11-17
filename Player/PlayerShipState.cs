@@ -1,5 +1,6 @@
-﻿using System.Collections.ObjectModel;
+﻿using GameProject.Economy;
 using GameProject.Ships;
+using System.Collections.ObjectModel;
 
 namespace GameProject.Player;
 
@@ -35,6 +36,10 @@ public sealed class PlayerShipState
     public string ShipDefinitionId { get; }
 
     public EquipmentContainer CargoHold { get; } = new();
+
+    // Отдельное хранилище торговых товаров.
+    // Оборудование продолжает использовать существующий EquipmentContainer.
+    public TradeGoodsHold TradeGoods { get; } = new();
 
     public IReadOnlyDictionary<string, EquipmentInstance>
         InstalledEquipment => _readOnlyInstalledEquipment;

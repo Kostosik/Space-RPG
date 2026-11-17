@@ -9,6 +9,8 @@ public sealed class GalaxySystemState
         Definition = definition;
     }
 
+
+
     // Неизменяемое описание системы из GalaxyMap.
     public GalaxySystem Definition { get; }
 

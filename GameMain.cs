@@ -1408,6 +1408,9 @@ internal sealed class GameMain : EngineGame
 
         navigation.SetFuelCapacity(stats.FuelCapacity);
 
+        _session.Player.Ship.TradeGoods
+    .SetCapacity(stats.TradeGoodsCapacity);
+
         if (fillFuel)
         {
             navigation.AddFuel(stats.FuelCapacity);

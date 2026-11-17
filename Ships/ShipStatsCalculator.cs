@@ -90,7 +90,8 @@ public sealed class ShipStatsCalculator
         return new ShipStats
         {
             MaxSpeed = maxSpeed,
-            FuelCapacity = (int)fuelCapacity
+            FuelCapacity = (int)fuelCapacity,
+            TradeGoodsCapacity = definition.BaseStats.TradeGoodsCapacity
         };
     }
 }
